@@ -28,6 +28,8 @@ docker compose up --build
 
 > Chroma is embedded (persistent volume under `./storage/chroma`). This satisfies the “real vector store” requirement without a separate vector container.
 
+> **Hot-reload:** Source code is volume-mounted (`.:/app`) so any `.py` file you save on the host is instantly live inside the container — no rebuild needed. Only run `docker compose up --build` again when `requirements.txt` or a `Dockerfile` changes.
+
 ## Latest automated evals
 
 Run:
@@ -52,6 +54,9 @@ Results are written to `evals/latest_results.json`. Last run on this branch: **m
 - **RAG:** PyMuPDF text + table-ish blocks + embedded figures (saved under `storage/extracted_images`); Chroma persistence; optional BM25 re-rank in `rag/retriever.py`.
 - **Visuals:** decision order documented inline in `graph/nodes.py:visual_node` — **uploaded image > PDF figure > MOCK slide** (Pillow renders prompt text onto a colored canvas).
 - **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl` (agent/tool/chunk summaries). The UI exposes the latest trace download.
+- **UI progress:** Each agent step fires a `status_callback` that updates an inline caption in the Streamlit UI in real-time — no page refresh, no clicking to expand.
+- **Grounded copywriter:** The copywriter system prompt explicitly forbids generic or placeholder text; every sentence must be backed by a named fact, project, metric, or quote from the retrieved chunks.
+- **Dynamic PDF queries:** The planner generates 3–5 document-aware search queries (e.g. methodology/results for a paper; experience/projects for a resume; features/metrics for a spec) that the research node uses instead of a single topic string. Works for any document type. Results are deduplicated across queries.
 
 See `ARCHITECTURE.md` for a sequence diagram and `PRODUCTION.md` for ops notes.
 
