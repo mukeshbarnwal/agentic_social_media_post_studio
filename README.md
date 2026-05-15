@@ -61,6 +61,101 @@ See `ARCHITECTURE.md` for a sequence diagram and `PRODUCTION.md` for ops notes.
 PYTHONPATH=. python scripts/smoke_tools.py
 ```
 
+### Full curl smoke test against the live Docker stack
+
+Make sure `docker compose up --build` is running, then:
+
+**Step 1 — Initialize session (copy the `mcp-session-id` from the response headers)**
+
+```bash
+curl -s -i -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl-test","version":"1.0"}}}'
+```
+
+Expected response includes:
+```
+mcp-session-id: <SESSION_ID>
+...
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"Agentic Social Post Studio"}, ...}}
+```
+
+**Step 2 — Capture the session ID into a shell variable (reused by all tool calls below)**
+
+```bash
+SESSION=$(curl -s -i -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl-test","version":"1.0"}}}' \
+  | grep -i "mcp-session-id" | awk '{print $2}' | tr -d '\r')
+echo "Session: $SESSION"
+```
+
+**Step 3 — List all tools**
+
+```bash
+curl -s -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+```
+
+Returns all 5 tools: `web_search`, `fetch_url`, `pdf_query`, `index_pdf`, `list_sources`.
+
+**Tool 1 — `list_sources`**
+
+```bash
+curl -s -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_sources","arguments":{}}}'
+```
+
+**Tool 2 — `web_search`**
+
+```bash
+curl -s -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"web_search","arguments":{"query":"LangGraph multi-agent patterns","max_results":3}}}'
+```
+
+**Tool 3 — `fetch_url`**
+
+```bash
+curl -s -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"fetch_url","arguments":{"url":"https://example.com"}}}'
+```
+
+**Tool 4 — `index_pdf`** *(copy a PDF into `storage/uploads/` first)*
+
+```bash
+curl -s -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"index_pdf","arguments":{"file_path":"storage/uploads/sample.pdf"}}}'
+```
+
+**Tool 5 — `pdf_query`** *(replace `pdf_id` with the value returned by `index_pdf`)*
+
+```bash
+curl -s -X POST http://localhost:8765/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"pdf_query","arguments":{"pdf_id":"pdf_abc123","question":"What are the key findings?","k":5}}}'
+```
+
+> **Note:** `curl http://localhost:8765/` returns `404` (root path not mapped) and `curl http://localhost:8765/mcp` without the correct headers returns `406` — both are correct and expected. The MCP protocol requires `POST` to `/mcp` with `Accept: application/json, text/event-stream`.
+
 ## Connecting the MCP server to a client
 
 Streamable HTTP endpoint (FastMCP defaults shown in `.env.example`):
