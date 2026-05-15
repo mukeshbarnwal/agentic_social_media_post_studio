@@ -17,7 +17,7 @@ _HOST = os.getenv("FASTMCP_HOST", "0.0.0.0")
 _PORT = int(os.getenv("FASTMCP_PORT", "8765"))
 
 mcp = FastMCP(
-    "Agentic Social Post Studio",
+    "Agentic Social Media Post Studio",
     instructions="Tools for web search, URL fetch, PDF indexing/query, and source listing.",
     host=_HOST,
     port=_PORT,

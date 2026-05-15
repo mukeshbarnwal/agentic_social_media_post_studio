@@ -32,8 +32,8 @@ def _upload_dir() -> Path:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Agentic Social Post Studio", layout="wide")
-    st.title("Agentic Social Post Studio")
+    st.set_page_config(page_title="Agentic Social Media Post Studio", layout="wide")
+    st.title("Agentic Social Media Post Studio")
     st.caption("Multi-agent LinkedIn studio with MCP tools, Chroma RAG, and MOCK_MODELS-friendly stubs.")
 
     mock = os.getenv("MOCK_MODELS", "").lower() in ("1", "true", "yes")
@@ -70,21 +70,33 @@ def main() -> None:
     if run:
         up = _upload_dir()
         pdf_ids: list[str] = []
+
+        step_placeholder = st.empty()
+
+        def _show_step(msg: str) -> None:
+            step_placeholder.caption(f"⏳ {msg}")
+
         if pdfs:
             for f in pdfs:
                 dest = up / f.name
                 dest.write_bytes(f.getvalue())
+                print(f"[UI]     PDF saved to disk: {dest.name} ({len(f.getvalue())//1024} KB)", flush=True)
+                _show_step(f"📄 Indexing **{f.name}** into Chroma…")
                 res = tr.index_pdf(str(dest))
                 if res.get("error"):
                     st.error(res["error"])
+                    print(f"[UI]     index_pdf error: {res['error']}", flush=True)
                 else:
                     pdf_ids.append(res["pdf_id"])
+                    print(f"[UI]     Indexed → pdf_id={res['pdf_id']}", flush=True)
+
         image_paths: list[str] = []
         if imgs:
             for im in imgs:
                 dest = up / im.name
                 dest.write_bytes(im.getvalue())
                 image_paths.append(str(dest))
+                _show_step(f"🖼️ Uploaded image **{im.name}**")
 
         initial: StudioState = {
             "topic": topic or "General LinkedIn update",
@@ -100,12 +112,13 @@ def main() -> None:
             "rerun_scope": "full",
             "critic_iterations": 0,
         }
-        with st.spinner("Running planner → research → copywriter → visual → critic…"):
-            out, trace = run_studio(initial)
+
+        out, trace = run_studio(initial, status_callback=_show_step)
+        step_placeholder.empty()
+
         st.session_state.last_state = out
         st.session_state.last_manifest = out.get("manifest")
         st.session_state.last_trace_path = str(trace.path) if trace.path else None
-        st.success("Run complete")
 
     partial = st.button("Rerun from edited copy only", help="Uses last run's plan + research chunks.")
     if partial and st.session_state.last_state:
@@ -129,12 +142,16 @@ def main() -> None:
         slim["user_edited_body"] = edited_body or (prev.get("post") or {}).get("body")
         slim["critic_iterations"] = 0
         slim["critic_report"] = {}
-        with st.spinner("Partial regeneration…"):
-            out, trace = run_studio(slim)
+        p_placeholder = st.empty()
+
+        def _show_partial(msg: str) -> None:
+            p_placeholder.caption(f"⏳ {msg}")
+
+        out, trace = run_studio(slim, status_callback=_show_partial)
+        p_placeholder.empty()
         st.session_state.last_state = out
         st.session_state.last_manifest = out.get("manifest")
         st.session_state.last_trace_path = str(trace.path) if trace.path else None
-        st.success("Partial rerun complete")
 
     man = st.session_state.last_manifest
     if man:

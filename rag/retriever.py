@@ -12,6 +12,8 @@ def retrieve_for_question(
     pdf_id: str | None = None,
     k: int = 8,
 ) -> list[dict[str, Any]]:
+    scope = f"pdf_id={pdf_id}" if pdf_id else "global"
+    print(f"[RETRIEVE] query={question[:80]!r} | scope={scope} | k={k}", flush=True)
     kb = KnowledgeStore.get()
     if pdf_id:
         chunks = kb.query_pdf(pdf_id, question, k=max(k * 2, 12))
@@ -35,7 +37,10 @@ def retrieve_for_question(
             for i, c in enumerate(chunks):
                 if i not in seen and len(merged) < k * 2:
                     merged.append(c)
-            return merged[:k]
+            result = merged[:k]
+            print(f"[RETRIEVE] BM25 re-rank → returning {len(result)} chunks", flush=True)
+            return result
     except Exception:
         pass
+    print(f"[RETRIEVE] Vector-only → returning {len(chunks[:k])} chunks", flush=True)
     return chunks[:k]

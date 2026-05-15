@@ -29,13 +29,29 @@ def _route_after_critic(state: StudioState) -> Literal["assemble", "copywriter",
     return "copywriter"
 
 
-def build_workflow(trace: RunTrace):
+_AGENT_LABELS = {
+    "planner":    ("📋", "Planner",    "Breaking down the topic into a content plan…"),
+    "research":   ("🔍", "Research",   "Fetching web results and querying RAG…"),
+    "copywriter": ("✍️", "Copywriter", "Drafting the LinkedIn post…"),
+    "visual":     ("🖼️", "Visual",     "Generating carousel slides…"),
+    "critic":     ("🧐", "Critic",     "Evaluating copy and visuals…"),
+    "assemble":   ("📦", "Assemble",   "Assembling the final manifest…"),
+}
+
+
+def build_workflow(trace: RunTrace, status_callback=None):
     g = StateGraph(StudioState)
 
     def wrap(name, fn):
         def _inner(state: StudioState) -> dict[str, Any]:
+            icon, label, detail = _AGENT_LABELS.get(name, ("⚙️", name.title(), ""))
+            print(f"[AGENT]  ▶ {name.upper()} starting …", flush=True)
             trace.log("agent_start", agent=name)
-            return fn(state, trace)
+            if status_callback:
+                status_callback(f"{icon} **{label}** — {detail}")
+            result = fn(state, trace)
+            print(f"[AGENT]  ✓ {name.upper()} done", flush=True)
+            return result
 
         return _inner
 
@@ -65,13 +81,13 @@ def build_workflow(trace: RunTrace):
     return g.compile()
 
 
-def run_studio(initial: StudioState) -> tuple[StudioState, RunTrace]:
+def run_studio(initial: StudioState, status_callback=None) -> tuple[StudioState, RunTrace]:
     trace = RunTrace()
     trace.log("run_start", topic=initial.get("topic"), rerun_scope=initial.get("rerun_scope", "full"))
     data = dict(initial)
     for drop in ("trace", "manifest", "slides", "sources", "token_usage"):
         data.pop(drop, None)
-    app = build_workflow(trace)
+    app = build_workflow(trace, status_callback=status_callback)
     data.setdefault("critic_iterations", 0)
     data.setdefault("trace", [])
     data.setdefault("token_usage", {})

@@ -1,4 +1,4 @@
-# Agentic Social Post Studio
+# Agentic Social Media Post Studio
 
 Proof-of-concept for a **multi-agent LinkedIn post studio** with a **custom MCP server**, **on-demand `SKILL.md` skills**, **Chroma multimodal RAG**, **LangGraph handoffs**, **JSONL tracing**, and a **Streamlit** UI. Heavy models can be disabled with **`MOCK_MODELS=true`** while still exercising the full control flow.
 
@@ -78,7 +78,7 @@ Expected response includes:
 ```
 mcp-session-id: <SESSION_ID>
 ...
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"Agentic Social Post Studio"}, ...}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"Agentic Social Media Post Studio"}, ...}}
 ```
 
 **Step 2 — Capture the session ID into a shell variable (reused by all tool calls below)**

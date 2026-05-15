@@ -13,7 +13,9 @@ services:
     ports:
       - "8765:8765"
     volumes:
+      - .:/app                        # live-mount all source code
       - ./storage:/app/storage
+      - /app/.venv                    # keep container's venv, don't overwrite with host
 
   app:
     build:
@@ -27,6 +29,8 @@ services:
     ports:
       - "8501:8501"
     volumes:
+      - .:/app                        # live-mount all source code
       - ./storage:/app/storage
+      - /app/.venv                    # keep container's venv, don't overwrite with host
     depends_on:
       - mcp
