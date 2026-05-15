@@ -1,0 +1,47 @@
+[
+  {
+    "id": "flow_pdf_carousel",
+    "topic": "Summarize uploaded PDF as a 4-slide carousel",
+    "num_slides": 4,
+    "pdf_fixture": null,
+    "expects": { "min_slides": 4, "min_hashtags": 1, "requires_source_markers": true }
+  },
+  {
+    "id": "flow_web_only",
+    "topic": "Thought leadership on remote collaboration trends",
+    "url_or_query": "https://example.com",
+    "expects": { "min_hashtags": 1, "requires_web_chunk": false }
+  },
+  {
+    "id": "flow_topic_only",
+    "topic": "Short post celebrating a product launch",
+    "expects": { "min_hashtags": 1, "max_hashtags": 8 }
+  },
+  {
+    "id": "format_hashtags",
+    "topic": "Engineering hiring post",
+    "expects": { "min_hashtags": 3, "max_hashtags": 6 }
+  },
+  {
+    "id": "grounding_markers",
+    "topic": "Explain benefits of typed RAG metadata",
+    "expects": { "requires_source_markers": true }
+  },
+  {
+    "id": "tone_formal",
+    "topic": "Formal company milestone announcement",
+    "tone": "formal",
+    "expects": { "tone": "formal" }
+  },
+  {
+    "id": "carousel_length",
+    "topic": "5-slide carousel on observability",
+    "num_slides": 5,
+    "expects": { "min_slides": 5 }
+  },
+  {
+    "id": "critic_pass_stub",
+    "topic": "Lightweight tip thread",
+    "expects": { "critic_pass": true }
+  }
+]

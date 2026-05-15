@@ -1,0 +1,32 @@
+services:
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    env_file:
+      - .env
+    environment:
+      MCP_TRANSPORT: streamable-http
+      FASTMCP_HOST: 0.0.0.0
+      FASTMCP_PORT: "8765"
+      STUDIO_ROOT: /app
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./storage:/app/storage
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    env_file:
+      - .env
+    environment:
+      STUDIO_ROOT: /app
+      MCP_PUBLIC_URL: http://mcp:8765/mcp
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      - mcp

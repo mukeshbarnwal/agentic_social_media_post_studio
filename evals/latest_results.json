@@ -1,0 +1,81 @@
+{
+  "mean_overall": 1.0,
+  "rows": [
+    {
+      "id": "flow_pdf_carousel",
+      "scores": {
+        "hashtags_min": 1.0,
+        "grounding_markers": 1.0,
+        "slides": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/4420c8378484.jsonl"
+    },
+    {
+      "id": "flow_web_only",
+      "scores": {
+        "hashtags_min": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/6547cb6b5060.jsonl"
+    },
+    {
+      "id": "flow_topic_only",
+      "scores": {
+        "hashtags_min": 1.0,
+        "hashtags_max": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/12ef99a97a54.jsonl"
+    },
+    {
+      "id": "format_hashtags",
+      "scores": {
+        "hashtags_min": 1.0,
+        "hashtags_max": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/10fa8f1bd89c.jsonl"
+    },
+    {
+      "id": "grounding_markers",
+      "scores": {
+        "grounding_markers": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/b3aed78f093b.jsonl"
+    },
+    {
+      "id": "tone_formal",
+      "scores": {
+        "tone_stub": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/4832e695c9ad.jsonl"
+    },
+    {
+      "id": "carousel_length",
+      "scores": {
+        "slides": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/92fb3a1fb32d.jsonl"
+    },
+    {
+      "id": "critic_pass_stub",
+      "scores": {
+        "critic": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/39923b9dc817.jsonl"
+    }
+  ]
+}
