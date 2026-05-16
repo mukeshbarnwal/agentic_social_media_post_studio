@@ -137,7 +137,10 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         "3. Never write generic sentences like 'I worked on diverse projects' — always name the actual project.\n"
         "4. Populate source_markers with the chunk_ids you directly used.\n"
         "Return JSON keys: hook, body, hashtags (array of 3-5 relevant tags), cta, "
-        "source_markers (array of chunk_ids you relied on), per_slide_captions (array aligned to plan slides).\n"
+        "source_markers (array of chunk_ids you relied on), "
+        "per_slide_captions (array of short captions aligned to plan slides), "
+        "per_slide_bullets (array of arrays — each inner array has 3-5 bullet strings with REAL specific facts, "
+        "names, numbers, or achievements from the research_excerpt, aligned to plan slides — NEVER generic).\n"
         f"LinkedIn skill:\n{li[:2000]}\nCitation skill:\n{cit[:1500]}\nBrand:\n{brand[:1500]}"
     )
     user = json.dumps(
@@ -173,6 +176,10 @@ def visual_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         for c in state.get("research_chunks", [])
         if c.get("metadata", {}).get("modality") == "figure" and c.get("metadata", {}).get("path")
     ]
+    post_out = state.get("post") or {}
+    copy_bullets = post_out.get("per_slide_bullets") or []   # real grounded bullets from Copywriter
+    copy_captions = post_out.get("per_slide_captions") or []
+
     for i, sl in enumerate(plan_slides):
         treatment = "generate_mock"
         asset_path = ""
@@ -182,17 +189,20 @@ def visual_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         elif fig_paths:
             treatment = "pdf_figure"
             asset_path = fig_paths[min(i, len(fig_paths) - 1)]
+
+        # Prefer Copywriter's grounded bullets; fall back to Planner's structural outline
+        bullets = (copy_bullets[i] if i < len(copy_bullets) and copy_bullets[i] else None) or sl.get("bullets", [])
+        cap = copy_captions[i] if i < len(copy_captions) else ""
+
         sys = "You are the Visual agent. Return JSON: image_prompt (string), alt_text (string), treatment echo."
-        user = json.dumps({"slide": sl, "treatment": treatment, "asset_path": asset_path, "skill": ip[:2000]}, default=str)
+        user = json.dumps({"slide": sl, "bullets": bullets, "treatment": treatment, "asset_path": asset_path, "skill": ip[:2000]}, default=str)
         vis = chat_json(sys, user, usage) if not mock_models() else {}
         alt = vis.get("alt_text") or f"Alt text for slide {i+1}: {sl.get('title','')}"
         prompt = vis.get("image_prompt") or f"LinkedIn illustration for: {sl.get('title')}"
-        caps = (state.get("post") or {}).get("per_slide_captions") or []
-        cap = caps[i] if i < len(caps) else ""
         out_path = _render_mock_slide(
             i,
             title=sl.get("title", f"Slide {i+1}"),
-            bullets=sl.get("bullets", []),
+            bullets=bullets,
             caption=cap,
             prompt=prompt,
             color=state.get("brand_color") or "#1d3557",
@@ -201,7 +211,7 @@ def visual_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
             {
                 "index": i,
                 "title": sl.get("title"),
-                "bullets": sl.get("bullets", []),
+                "bullets": bullets,
                 "caption": cap,
                 "treatment": treatment,
                 "asset_path": asset_path or str(out_path),
