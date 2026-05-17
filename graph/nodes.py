@@ -167,8 +167,15 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         "Return JSON keys: hook, body, hashtags (array of 3-5 relevant tags), cta, "
         "source_markers (array of chunk_ids you relied on), "
         "per_slide_captions (array of short captions aligned to plan slides), "
-        "per_slide_bullets (array of arrays — each inner array has 3-5 bullet strings with REAL specific facts, "
-        "names, numbers, or achievements from the research_excerpt, aligned to plan slides — NEVER generic).\n"
+        "per_slide_bullets (array of arrays, one inner array per slide — CRITICAL RULES:\n"
+        "  - Each inner array MUST contain 3-5 bullet strings extracted directly from research_excerpt.\n"
+        "  - Bullets MUST contain actual names, numbers, stats, or findings from the source material.\n"
+        "  - NEVER write structural meta-bullets like 'Highlight the main issues' or 'Discuss the impact'.\n"
+        "  - BAD: ['Highlight the main issues presented in the PDF', 'Discuss the potential impact']\n"
+        "  - GOOD: ['BTRAC 2010 flagged 11,000 km of roads under strain', '25% population growth driving congestion']\n"
+        "  - If you cannot find specific facts for a slide, reuse the best facts from research_excerpt for that slide.\n"
+        "  - The array length MUST equal the number of slides in the plan.\n"
+        ").\n"
         f"LinkedIn skill:\n{li[:2000]}\nCitation skill:\n{cit[:1500]}\nBrand:\n{brand[:1500]}"
     )
     prior_post = state.get("post") or {}
@@ -221,7 +228,10 @@ def visual_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
             asset_path = fig_paths[min(i, len(fig_paths) - 1)]
 
         # Prefer Copywriter's grounded bullets; fall back to Planner's structural outline
-        bullets = (copy_bullets[i] if i < len(copy_bullets) and copy_bullets[i] else None) or sl.get("bullets", [])
+        grounded = copy_bullets[i] if i < len(copy_bullets) and copy_bullets[i] else None
+        if not grounded:
+            print(f"[VISUAL] WARN slide={i+1} — no grounded bullets from copywriter, falling back to planner template", flush=True)
+        bullets = grounded or sl.get("bullets", [])
         cap = copy_captions[i] if i < len(copy_captions) else ""
 
         sys = "You are the Visual agent. Return JSON: image_prompt (string), alt_text (string), treatment echo."
@@ -308,9 +318,9 @@ def _render_mock_slide(
     d.rectangle([60, y, W - 60, y + 4], fill="white")
     y += 24
 
-    # Bullets
+    # Bullets (use ASCII dash — Pillow's default bitmap font has no glyph for •)
     for b in bullets[:6]:
-        bullet_text = f"• {b}"
+        bullet_text = f"- {b}"
         _draw_wrapped(d, bullet_text, font_body, "#e0e0e0", 60, y, W - 60, line_height=36)
         y += _text_height(bullet_text, W - 120, 36) + 10
 
