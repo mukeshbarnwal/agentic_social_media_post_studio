@@ -10,14 +10,21 @@ from chromadb import Documents, EmbeddingFunction, Embeddings
 
 
 class MockEmbeddingFunction(EmbeddingFunction):
-    """MOCK: deterministic dense vectors from text (384-dim). No external model download."""
+    """MOCK: deterministic dense vectors from text (1536-dim).
+
+    Dimension matches OpenAI text-embedding-3-small so a developer can switch
+    from MOCK_MODELS=true to a real API key without a Chroma dimension mismatch.
+    No external model download required.
+    """
+
+    DIM = 1536
 
     def __call__(self, input: Documents) -> Embeddings:
         out: Embeddings = []
         for text in input:
             h = hashlib.sha256(text.encode("utf-8", errors="ignore")).digest()
             vec: list[float] = []
-            for i in range(384):
+            for i in range(self.DIM):
                 vec.append((((h[i % len(h)] + i * 31) % 256) / 127.5) - 1.0)
             out.append(vec)
         return out
