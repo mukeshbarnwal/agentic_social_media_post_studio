@@ -65,7 +65,7 @@ def main() -> None:
         edited_body = st.text_area(
             "Body edit instruction or replacement (optional)",
             height=120,
-            placeholder="e.g. 'remove the dry process section' or 'focus only on the wet process steps'",
+            placeholder="e.g. 'emphasise business impact over technical detail' or 'condense to three key takeaways'",
         )
 
     run = st.button("Generate post", type="primary")
