@@ -45,8 +45,12 @@ def planner_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
             "note": (
                 "If has_uploaded_images=true and no PDFs, this is a visual-first post. "
                 "The image will be captioned by the Research agent. "
-                "Create slide titles that reflect what the user's topic says about the image — "
-                "do NOT use generic titles like 'Let's Dive Into the Image'."
+                "IMPORTANT: If the topic looks like an ACTION or INSTRUCTION (e.g. 'write linkedin summary', "
+                "'summarize this', 'create a post', 'make a carousel'), treat the UPLOADED IMAGE as the subject — "
+                "do NOT write about the action itself. Create slide titles about the IMAGE CONTENT. "
+                "For example, if an image shows coffee processing steps, create slides about those steps, "
+                "NOT about 'how to write a LinkedIn post'. "
+                "Do NOT use generic titles like 'Let's Dive Into the Image'."
             ),
         },
         default=str,
@@ -146,12 +150,20 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
     sys = (
         "You are the Copywriter. Your job is to write a LinkedIn post grounded ENTIRELY in the "
         "provided research_excerpt. RULES:\n"
+        "0. If the topic looks like an ACTION or INSTRUCTION (e.g. 'write linkedin summary', 'summarize this', "
+        "'create a post', 'make slides'), treat the research_excerpt content as the SUBJECT of the post — "
+        "the topic is the user's request verb, NOT the post subject. Write about what is IN the research_excerpt.\n"
         "1. Use ONLY facts, names, projects, technologies, metrics, and achievements that appear verbatim "
         "or are directly inferable from the research_excerpt. Do NOT invent, generalise, or use placeholder text.\n"
         "2. If the excerpt is a resume, extract the person's actual job titles, specific projects, "
         "real technologies used, and concrete results/numbers mentioned.\n"
         "3. Never write generic sentences like 'I worked on diverse projects' — always name the actual project.\n"
         "4. Populate source_markers with the chunk_ids you directly used.\n"
+        "5. If edit_hook or edit_body are provided:\n"
+        "   - Treat them as EDITING INSTRUCTIONS or replacement text from the user.\n"
+        "   - If the value looks like an instruction (imperative, short), apply it to rewrite the relevant field.\n"
+        "   - If it looks like full replacement text, use it verbatim for that field.\n"
+        "   - Either way, keep all other fields consistent and grounded.\n"
         "Return JSON keys: hook, body, hashtags (array of 3-5 relevant tags), cta, "
         "source_markers (array of chunk_ids you relied on), "
         "per_slide_captions (array of short captions aligned to plan slides), "
@@ -159,6 +171,7 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         "names, numbers, or achievements from the research_excerpt, aligned to plan slides — NEVER generic).\n"
         f"LinkedIn skill:\n{li[:2000]}\nCitation skill:\n{cit[:1500]}\nBrand:\n{brand[:1500]}"
     )
+    prior_post = state.get("post") or {}
     user = json.dumps(
         {
             "topic": state.get("topic"),
@@ -166,17 +179,15 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
             "target_length": state.get("target_length", "medium"),
             "plan": state.get("plan", {}),
             "research_excerpt": ctx[:24000],
-            "user_edited_hook": state.get("user_edited_hook"),
-            "user_edited_body": state.get("user_edited_body"),
+            "prior_hook": prior_post.get("hook"),
+            "prior_body": prior_post.get("body"),
+            "edit_hook": state.get("user_edited_hook"),
+            "edit_body": state.get("user_edited_body"),
         },
         default=str,
     )
-    print(f"[COPYWRITER] IN  topic={state.get('topic')!r} | chunks={len(state.get('research_chunks', []))} | tone={state.get('tone')} | slides_in_plan={len((state.get('plan') or {}).get('slides') or [])}", flush=True)
+    print(f"[COPYWRITER] IN  topic={state.get('topic')!r} | chunks={len(state.get('research_chunks', []))} | tone={state.get('tone')} | slides_in_plan={len((state.get('plan') or {}).get('slides') or [])} | edit_hook={state.get('user_edited_hook')!r} | edit_body={state.get('user_edited_body')!r}", flush=True)
     post = chat_json(sys, user, usage)
-    if state.get("user_edited_hook"):
-        post["hook"] = state["user_edited_hook"]
-    if state.get("user_edited_body"):
-        post["body"] = state["user_edited_body"]
     print(f"[COPYWRITER] OUT hook={post.get('hook','')[:80]!r} | hashtags={post.get('hashtags')} | source_markers={post.get('source_markers')} | per_slide_bullets_count={len(post.get('per_slide_bullets') or [])} | tokens={usage}", flush=True)
     trace.log("agent_end", agent="copywriter", source_markers=post.get("source_markers", []))
     return {"post": post, "token_usage": usage, "trace": [{"event": "copywriter", "post": post}]}
@@ -366,18 +377,57 @@ def critic_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         default=str,
     )
     print(f"[CRITIC] IN  grounded={grounded} | fmt_ok={fmt_ok} | source_markers={list(markers)[:5]} | iteration={state.get('critic_iterations',0)+1}", flush=True)
-    report = chat_json(sys, user, usage)
-    if not report:
-        report = {
-            "pass": grounded and fmt_ok,
-            "scores": {"grounding": 0.9 if grounded else 0.4, "format": 0.9 if fmt_ok else 0.5, "voice": 0.85},
-            "issues": [] if grounded and fmt_ok else ["Add explicit source_markers from research chunk ids."],
-            "route": "end" if grounded and fmt_ok else "copywriter",
+
+    # When Python pre-checks confirm grounding and format, bypass LLM grounding eval.
+    # The LLM cannot verify opaque chunk IDs (image IDs, web IDs) semantically — it will
+    # incorrectly fail them. Only ask the LLM for voice/style scoring in that case.
+    if grounded and fmt_ok:
+        report = chat_json(sys, user, usage) or {}
+        report["pass"] = True
+        report["scores"] = {
+            "grounding": 0.9,
+            "format": 0.9,
+            "voice": report.get("scores", {}).get("voice", 0.85),
         }
-    print(f"[CRITIC] OUT pass={report.get('pass')} | scores={report.get('scores')} | route={report.get('route')} | issues={report.get('issues')} | tokens={usage}", flush=True)
-    trace.log("agent_end", agent="critic", report=report)
+        report["issues"] = []  # pre-check passed; discard LLM issues that contradict the pass
+        report["route"] = "end"
+    else:
+        report = chat_json(sys, user, usage)
+        if not report:
+            report = {
+                "pass": False,
+                "scores": {"grounding": 0.4, "format": 0.9 if fmt_ok else 0.5, "voice": 0.85},
+                "issues": ["source_markers do not reference retrieved chunk ids — add citations."],
+                "route": "copywriter",
+            }
+
     it = int(state.get("critic_iterations") or 0) + 1
-    return {"critic_report": report, "critic_iterations": it, "token_usage": usage, "trace": [{"event": "critic", "report": report}]}
+    max_reached = it >= 3
+    print(f"[CRITIC] OUT pass={report.get('pass')} | scores={report.get('scores')} | route={report.get('route')} | issues={report.get('issues')} | iteration={it} | max_reached={max_reached} | tokens={usage}", flush=True)
+    trace.log(
+        "agent_end",
+        agent="critic",
+        critic_iteration=it,
+        max_retries_reached=max_reached,
+        passed=bool(report.get("pass")),
+        route=report.get("route"),
+        scores=report.get("scores", {}),
+        issues=report.get("issues", []),
+    )
+    return {
+        "critic_report": report,
+        "critic_iterations": it,
+        "token_usage": usage,
+        "trace": [{
+            "event": "critic",
+            "critic_iteration": it,
+            "max_retries_reached": max_reached,
+            "passed": bool(report.get("pass")),
+            "route": report.get("route"),
+            "scores": report.get("scores", {}),
+            "issues": report.get("issues", []),
+        }],
+    }
 
 
 def assemble_manifest(state: StudioState, trace: RunTrace) -> dict[str, Any]:

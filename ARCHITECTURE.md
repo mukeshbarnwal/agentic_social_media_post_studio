@@ -32,12 +32,19 @@ sequenceDiagram
   V-->>G: slides[] + rendered PNG paths
 
   G->>Q: rubric scoring
-  Q-->>G: pass/fail + route
+  Q-->>G: pass/fail + route + critic_iteration
 
-  alt critic pass
-    G->>U: manifest + trace
-  else critic fail (bounded)
-    G->>C: targeted rewrite (loop)
+  alt critic pass OR iteration >= 3
+    G->>U: manifest + trace (critic_routing → assemble)
+  else critic fail → copywriter
+    G->>C: targeted rewrite
+    Note over G,Q: loops back through copywriter → visual → critic
+  else critic fail → visual
+    G->>V: visual rewrite
+    Note over G,Q: loops back through visual → critic
+  else critic fail → research
+    G->>R: re-research
+    Note over G,Q: loops back through research → copywriter → visual → critic
   end
 ```
 
@@ -56,6 +63,17 @@ sequenceDiagram
 1. Skills live in `skills/<folder>/SKILL.md`.
 2. `skill_loader.load_skill("<folder>")` parses optional YAML frontmatter (`name`, `description`) and markdown body.
 3. Each graph node pulls **only** the skills it needs (see `graph/nodes.py`).
+
+## Critic loop & observability
+
+The critic runs after every visual pass. Its routing logic in `graph/workflow.py` emits two JSONL trace events per iteration:
+
+| Event | Key fields |
+|---|---|
+| `agent_end` (critic) | `critic_iteration`, `max_retries_reached`, `passed`, `route`, `scores`, `issues` |
+| `critic_routing` | `destination`, `critic_iteration`, `max_retries_reached`, `critic_passed`, `issues` |
+
+The loop is hard-capped at **3 iterations** (`critic_iterations >= 3` → unconditional assemble). When `passed=true`, `issues` is always empty — the Python pre-check overrides any contradictory LLM output so the trace is never misleading.
 
 ## Grounding contract
 

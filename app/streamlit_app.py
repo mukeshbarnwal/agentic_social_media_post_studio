@@ -57,9 +57,16 @@ def main() -> None:
 
     with col2:
         st.subheader("Partial rerun (no full regeneration)")
-        st.caption("Edit copy, then rerun copywriter → visual → critic while keeping prior research/plan.")
-        edited_hook = st.text_input("Override hook (optional)")
-        edited_body = st.text_area("Override body (optional)", height=120)
+        st.caption("Give an editing instruction or replacement text — copywriter → visual → critic re-run while keeping prior research/plan.")
+        edited_hook = st.text_input(
+            "Hook edit instruction or replacement (optional)",
+            placeholder="e.g. 'make it punchier' or paste your own hook",
+        )
+        edited_body = st.text_area(
+            "Body edit instruction or replacement (optional)",
+            height=120,
+            placeholder="e.g. 'remove the dry process section' or 'focus only on the wet process steps'",
+        )
 
     run = st.button("Generate post", type="primary")
 

@@ -18,15 +18,35 @@ from graph.state import StudioState
 from observability.trace_logger import RunTrace
 
 
-def _route_after_critic(state: StudioState) -> Literal["assemble", "copywriter", "visual", "research"]:
+def _route_after_critic(state: StudioState, trace: RunTrace | None = None) -> Literal["assemble", "copywriter", "visual", "research"]:
     rep = state.get("critic_report") or {}
     it = int(state.get("critic_iterations") or 0)
-    if rep.get("pass") or it >= 3:
+    max_reached = it >= 3
+    if rep.get("pass") or max_reached:
+        if trace:
+            trace.log(
+                "critic_routing",
+                destination="assemble",
+                critic_iteration=it,
+                max_retries_reached=max_reached,
+                critic_passed=bool(rep.get("pass")),
+                issues=rep.get("issues", []),
+            )
         return "assemble"
     route = rep.get("route") or "copywriter"
-    if route in ("copywriter", "visual", "research"):
-        return route  # type: ignore[return-value]
-    return "copywriter"
+    if route not in ("copywriter", "visual", "research"):
+        route = "copywriter"
+    if trace:
+        trace.log(
+            "critic_routing",
+            destination=route,
+            critic_iteration=it,
+            max_retries_reached=False,
+            critic_passed=False,
+            issues=rep.get("issues", []),
+            scores=rep.get("scores", {}),
+        )
+    return route  # type: ignore[return-value]
 
 
 _AGENT_LABELS = {
@@ -69,7 +89,7 @@ def build_workflow(trace: RunTrace, status_callback=None):
     g.add_edge("visual", "critic")
     g.add_conditional_edges(
         "critic",
-        _route_after_critic,
+        lambda state: _route_after_critic(state, trace),
         {
             "assemble": "assemble",
             "copywriter": "copywriter",

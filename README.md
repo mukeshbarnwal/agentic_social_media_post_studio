@@ -63,7 +63,7 @@ Results are written to `evals/latest_results.json`. Last run on this branch: **m
 ## Architecture (short)
 
 - **Shared state:** `graph/state.py` (`StudioState`) — TypedDict blackboard; `trace` and `token_usage` use reducers.
-- **Graph:** `graph/workflow.py` — `planner → research → copywriter → visual → critic` with critic loops routing back to `copywriter`, `visual`, or `research` until pass or iteration cap (max 3).
+- **Graph:** `graph/workflow.py` — `planner → research → copywriter → visual → critic` with critic loops routing back to `copywriter`, `visual`, or `research` until pass or iteration cap (max 3). Each routing decision is logged as a `critic_routing` trace event with destination, iteration count, and whether the cap was hit.
 - **MCP tools** (implemented in `mcp_server/tool_runtime.py`, exposed via FastMCP in `mcp_server/server.py`):
   - `web_search(query, max_results=5)` → ranked `{title,url,snippet}` (MOCK unless `TAVILY_API_KEY`, with DuckDuckGo lite fallback)
   - `fetch_url(url)` → `{markdown, image_urls, web_source_id}` — chunks and embeds into Chroma
@@ -73,11 +73,12 @@ Results are written to `evals/latest_results.json`. Last run on this branch: **m
 - **Skills:** folders under `skills/<name>/SKILL.md` with YAML frontmatter; loaded **per step** via `skill_loader.py`.
 - **RAG:** PyMuPDF text + table blocks + embedded figures (saved under `storage/extracted_images`); Chroma persistence; BM25 re-rank in `rag/retriever.py`.
 - **Visuals:** decision order — **uploaded image > PDF figure > MOCK slide** (Pillow renders real content onto a branded canvas). When a real asset exists the PNG path is served directly; mock slide is only the final fallback.
-- **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl`. Terminal prints structured `[AGENT] IN/OUT` logs per agent step. The UI exposes the latest trace download.
+- **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl`. Terminal prints structured `[AGENT] IN/OUT` logs per agent step. The UI exposes the latest trace download. Critic runs emit two events per iteration: `agent_end` (with `critic_iteration`, `max_retries_reached`, `passed`, `scores`, `issues`) and `critic_routing` (with `destination` and reason), making the bounded retry loop fully visible in the trace.
 - **UI progress:** Each agent step fires a `status_callback` updating an inline caption in real-time — no page refresh or clicking required.
 - **Grounded copywriter:** System prompt explicitly forbids generic text; every claim must come from retrieved chunks. Outputs `per_slide_bullets` (real facts per slide) alongside `per_slide_captions`.
 - **Dynamic PDF queries:** Planner generates 3-5 document-aware queries (adapts to resume / paper / spec / any doc type). Research deduplicates across queries.
 - **Auto single-slide:** Image-only input (no PDF, no URL) auto-sets `num_slides=1` for a single-image post per the spec.
+- **Action-style topics:** If the topic field is an instruction rather than a subject (e.g. `"write linkedin summary"`, `"summarize this"`), the Planner and Copywriter treat the uploaded image or retrieved content as the post subject — the topic is the user's intent verb, not the post theme.
 
 See `ARCHITECTURE.md` for a sequence diagram and `PRODUCTION.md` for ops notes.
 
