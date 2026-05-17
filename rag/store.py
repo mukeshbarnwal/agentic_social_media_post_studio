@@ -29,11 +29,28 @@ class KnowledgeStore:
     def __init__(self) -> None:
         chroma_path().mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(chroma_path()))
-        self._collection = self._client.get_or_create_collection(
-            name="studio_kb",
-            embedding_function=build_embedding_function(),
-            metadata={"hnsw:space": "cosine"},
-        )
+        ef = build_embedding_function()
+        try:
+            self._collection = self._client.get_or_create_collection(
+                name="studio_kb",
+                embedding_function=ef,
+                metadata={"hnsw:space": "cosine"},
+            )
+        except ValueError as exc:
+            # Chroma rejects a mismatched embedding_function name even when dimensions match
+            # (e.g. collection was created with "openai" and is now opened with MockEmbeddingFunction).
+            # Auto-reset so the app stays runnable; user must re-upload PDFs.
+            import warnings
+            warnings.warn(
+                f"[KnowledgeStore] Embedding function conflict — resetting collection. "
+                f"Re-upload any PDFs you need. ({exc})"
+            )
+            self._client.delete_collection("studio_kb")
+            self._collection = self._client.create_collection(
+                name="studio_kb",
+                embedding_function=ef,
+                metadata={"hnsw:space": "cosine"},
+            )
         self._extras_path = chroma_path() / "extras.json"
         self._extras: dict[str, Any] = {}
         if self._extras_path.exists():
