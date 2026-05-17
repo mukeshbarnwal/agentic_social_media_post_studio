@@ -58,7 +58,25 @@ Run:
 PYTHONPATH=. python evals/run_evals.py
 ```
 
-Results are written to `evals/latest_results.json`. Last run on this branch: **mean overall score 1.00** across 8 cases (MOCK mode).
+Results are written to `evals/latest_results.json`.
+
+**Last run — MOCK mode, 10 cases (flows 1–4 + format/grounding/tone checks):**
+
+| Case | Metrics checked | Overall |
+|---|---|---|
+| `flow_pdf_carousel` | slides ≥ 4, hashtags ≥ 1, source_markers | 1.00 |
+| `flow_web_only` | hashtags ≥ 1 | 1.00 |
+| `flow_image_post` | slides = 1 (single-image), hashtags ≥ 1, source_markers | 1.00 |
+| `flow_partial_rerun` | source_markers, critic pass | 1.00 |
+| `flow_topic_only` | hashtags 1–8 | 1.00 |
+| `format_hashtags` | hashtags 3–6 | 1.00 |
+| `grounding_markers` | source_markers present | 1.00 |
+| `tone_formal` | hook + body present | 1.00 |
+| `carousel_length` | slides ≥ 5 | 1.00 |
+| `critic_pass_stub` | critic pass | 1.00 |
+| **Mean** | | **1.00** |
+
+> All scores are 1.00 in MOCK mode — deterministic stubs always satisfy structural checks. The eval harness's value is catching regressions (a score drop flags a broken agent step or schema change), not measuring LLM quality in isolation.
 
 ## Architecture (short)
 

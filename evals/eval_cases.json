@@ -10,7 +10,20 @@
     "id": "flow_web_only",
     "topic": "Thought leadership on remote collaboration trends",
     "url_or_query": "https://example.com",
-    "expects": { "min_hashtags": 1, "requires_web_chunk": false }
+    "expects": { "min_hashtags": 1 }
+  },
+  {
+    "id": "flow_image_post",
+    "topic": "Summarize this diagram",
+    "num_slides": 1,
+    "image_fixture": "mock",
+    "expects": { "min_slides": 1, "single_slide": true, "min_hashtags": 1, "requires_source_markers": true }
+  },
+  {
+    "id": "flow_partial_rerun",
+    "topic": "AI trends in 2024",
+    "edit_hook": "make it punchier",
+    "expects": { "min_hashtags": 1, "requires_source_markers": true, "critic_pass": true }
   },
   {
     "id": "flow_topic_only",

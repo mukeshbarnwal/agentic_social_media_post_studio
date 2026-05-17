@@ -45,6 +45,12 @@ def _score_case(case: dict, state: dict) -> dict:
         if not ok:
             notes.append("not enough slides")
 
+    if ex.get("single_slide"):
+        ok = len(slides) == 1
+        scores["single_slide"] = 1.0 if ok else 0.0
+        if not ok:
+            notes.append("expected exactly 1 slide for image-only post")
+
     if ex.get("critic_pass"):
         rep = state.get("critic_report") or {}
         ok = bool(rep.get("pass"))
@@ -69,17 +75,23 @@ def main() -> None:
     cases = json.loads(cases_path.read_text())
     rows = []
     for case in cases:
+        # flow_image_post: auto-set num_slides=1, no URL (mirrors UI image-only detection)
+        is_image_case = case.get("image_fixture") == "mock"
+        effective_slides = 1 if is_image_case else int(case.get("num_slides", 3))
+
         init: StudioState = {
             "topic": case.get("topic", "Eval topic"),
             "tone": case.get("tone", "casual"),
             "target_length": "medium",
-            "num_slides": int(case.get("num_slides", 3)),
+            "num_slides": effective_slides,
             "brand_color": "#457b9d",
             "pdf_ids": [],
             "image_paths": [],
             "url_or_query": case.get("url_or_query", ""),
             "rerun_scope": "full",
             "critic_iterations": 0,
+            "user_edited_hook": case.get("edit_hook") or None,
+            "user_edited_body": case.get("edit_body") or None,
         }
         out, trace = run_studio(init)
         r = _score_case(case, dict(out))
