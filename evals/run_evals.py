@@ -8,9 +8,14 @@ from pathlib import Path
 
 # Force deterministic evals regardless of host shell env
 os.environ["MOCK_MODELS"] = "true"
+# Use an isolated Chroma collection so eval runs never conflict with the
+# production collection (which may have been created with a different embedding
+# function, e.g. OpenAI vs. MockEmbeddingFunction).
+os.environ["CHROMA_PERSIST_DIR"] = "storage/chroma_eval"
 
 from graph.state import StudioState
 from graph.workflow import run_studio
+from rag.store import KnowledgeStore
 
 
 def _score_case(case: dict, state: dict) -> dict:
@@ -75,6 +80,8 @@ def main() -> None:
     cases = json.loads(cases_path.read_text())
     rows = []
     for case in cases:
+        KnowledgeStore._instance = None  # reset singleton so each case gets a clean store
+
         # flow_image_post: auto-set num_slides=1, no URL (mirrors UI image-only detection)
         is_image_case = case.get("image_fixture") == "mock"
         effective_slides = 1 if is_image_case else int(case.get("num_slides", 3))

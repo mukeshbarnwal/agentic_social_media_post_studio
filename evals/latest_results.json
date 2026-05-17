@@ -10,7 +10,7 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/4420c8378484.jsonl"
+      "trace_path": "/app/storage/runs/a02b526b5bf3.jsonl"
     },
     {
       "id": "flow_web_only",
@@ -19,7 +19,30 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/6547cb6b5060.jsonl"
+      "trace_path": "/app/storage/runs/603418b0998e.jsonl"
+    },
+    {
+      "id": "flow_image_post",
+      "scores": {
+        "hashtags_min": 1.0,
+        "grounding_markers": 1.0,
+        "slides": 1.0,
+        "single_slide": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/app/storage/runs/fd9e18715826.jsonl"
+    },
+    {
+      "id": "flow_partial_rerun",
+      "scores": {
+        "hashtags_min": 1.0,
+        "grounding_markers": 1.0,
+        "critic": 1.0
+      },
+      "overall": 1.0,
+      "notes": [],
+      "trace_path": "/app/storage/runs/1dfd8d00d93e.jsonl"
     },
     {
       "id": "flow_topic_only",
@@ -29,7 +52,7 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/12ef99a97a54.jsonl"
+      "trace_path": "/app/storage/runs/4e5483a80399.jsonl"
     },
     {
       "id": "format_hashtags",
@@ -39,7 +62,7 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/10fa8f1bd89c.jsonl"
+      "trace_path": "/app/storage/runs/e4fe6aa32815.jsonl"
     },
     {
       "id": "grounding_markers",
@@ -48,7 +71,7 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/b3aed78f093b.jsonl"
+      "trace_path": "/app/storage/runs/3c176f357f1f.jsonl"
     },
     {
       "id": "tone_formal",
@@ -57,7 +80,7 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/4832e695c9ad.jsonl"
+      "trace_path": "/app/storage/runs/45790ea16875.jsonl"
     },
     {
       "id": "carousel_length",
@@ -66,7 +89,7 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/92fb3a1fb32d.jsonl"
+      "trace_path": "/app/storage/runs/cb88158144ff.jsonl"
     },
     {
       "id": "critic_pass_stub",
@@ -75,7 +98,7 @@
       },
       "overall": 1.0,
       "notes": [],
-      "trace_path": "/Users/mukesh/Downloads/agentic_social_media_post_studio/agentic-social-post-studio/storage/runs/39923b9dc817.jsonl"
+      "trace_path": "/app/storage/runs/267dbbf3c2d2.jsonl"
     }
   ]
 }
