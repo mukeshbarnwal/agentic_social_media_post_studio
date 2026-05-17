@@ -1,0 +1,4 @@
+[server]
+# POC-level upload limits — keeps memory and processing time bounded.
+# 10 MB covers resumes, short whitepapers, and standard images comfortably.
+maxUploadSize = 10
