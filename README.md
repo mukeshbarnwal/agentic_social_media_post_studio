@@ -26,9 +26,29 @@ docker compose up --build
 - **Streamlit UI:** `http://localhost:8501`
 - **MCP (streamable HTTP):** `http://localhost:8765/mcp`
 
-> Chroma is embedded (persistent volume under `./storage/chroma`). This satisfies the “real vector store” requirement without a separate vector container.
+> Chroma is embedded (persistent volume under `./storage/chroma`). This satisfies the "real vector store" requirement without a separate vector container.
 
-> **Hot-reload:** Source code is volume-mounted (`.:/app`) so any `.py` file you save on the host is instantly live inside the container — no rebuild needed. Only run `docker compose up --build` again when `requirements.txt` or a `Dockerfile` changes.
+> **Hot-reload:** Source code is volume-mounted (`.:/app`) so file saves on the host are instantly live. Streamlit auto-reloads `app/streamlit_app.py`. For any other module (`graph/`, `rag/`, `mcp_server/`), run `docker compose restart app` to flush Python's module cache. Only run `docker compose up --build` when `requirements.txt` or a `Dockerfile` changes.
+
+| File changed | Action |
+|---|---|
+| `app/streamlit_app.py` | Nothing — Streamlit auto-reloads |
+| `graph/*.py`, `rag/*.py`, `mcp_server/tool_runtime.py` | `docker compose restart app` |
+| `mcp_server/server.py` | `docker compose restart mcp` |
+| `requirements.txt` or `Dockerfile` | `docker compose up --build` |
+
+## MOCK_MODELS mode
+
+Set `MOCK_MODELS=true` in `.env` (or `export MOCK_MODELS=true` locally) to swap in deterministic stubs for all LLM calls, embeddings, and web search. The full agent pipeline still executes end-to-end. Every mock output is labelled **MOCK** in logs and on slide images so nothing is silently faked.
+
+## Required user flows
+
+| Flow | Inputs | What the system does |
+|---|---|---|
+| **1 — PDF carousel** | PDF + topic + N slides | Indexes PDF into Chroma, planner generates document-aware queries, research retrieves grounded chunks, copywriter writes slide-by-slide bullets from actual content, visual renders slides |
+| **2 — URL / web search** | Topic + URL or search query | `fetch_url` strips and chunks the page into Chroma (URL) or `web_search` returns snippets (query); copywriter grounds post in web content |
+| **3 — Single image post** | Image + topic | Research captions the image; copywriter writes post around the caption; visual uses the real uploaded image; `num_slides` auto-set to 1 |
+| **4 — Partial rerun** | Edited hook/body | Keeps prior plan + research; re-runs copywriter → visual → critic only |
 
 ## Latest automated evals
 
@@ -43,22 +63,35 @@ Results are written to `evals/latest_results.json`. Last run on this branch: **m
 ## Architecture (short)
 
 - **Shared state:** `graph/state.py` (`StudioState`) — TypedDict blackboard; `trace` and `token_usage` use reducers.
-- **Graph:** `graph/workflow.py` — `planner → research → copywriter → visual → critic` with critic loops routing back to `copywriter`, `visual`, or `research` until pass or iteration cap.
-- **MCP tools (implemented in `mcp_server/tool_runtime.py`, exposed via FastMCP in `mcp_server/server.py`):**
+- **Graph:** `graph/workflow.py` — `planner → research → copywriter → visual → critic` with critic loops routing back to `copywriter`, `visual`, or `research` until pass or iteration cap (max 3).
+- **MCP tools** (implemented in `mcp_server/tool_runtime.py`, exposed via FastMCP in `mcp_server/server.py`):
   - `web_search(query, max_results=5)` → ranked `{title,url,snippet}` (MOCK unless `TAVILY_API_KEY`, with DuckDuckGo lite fallback)
-  - `fetch_url(url)` → `{markdown, image_urls, web_source_id}` and indexes content into Chroma
-  - `pdf_query(pdf_id, question, k)` → top‑k chunks `{chunk_id,text,metadata}`
+  - `fetch_url(url)` → `{markdown, image_urls, web_source_id}` — chunks and embeds into Chroma
+  - `pdf_query(pdf_id, question, k)` → top-k chunks `{chunk_id,text,metadata}`
   - `index_pdf(file_path)` → `{pdf_id}` (must be under `storage/uploads`)
   - `list_sources()` → chunk listing + distinct `pdf_id`s
-- **Skills:** folders under `skills/<name>/SKILL.md` with YAML frontmatter; loaded **per step** via `skill_loader.py` (not all skills in every system prompt).
-- **RAG:** PyMuPDF text + table-ish blocks + embedded figures (saved under `storage/extracted_images`); Chroma persistence; optional BM25 re-rank in `rag/retriever.py`.
-- **Visuals:** decision order documented inline in `graph/nodes.py:visual_node` — **uploaded image > PDF figure > MOCK slide** (Pillow renders prompt text onto a colored canvas).
-- **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl` (agent/tool/chunk summaries). The UI exposes the latest trace download.
-- **UI progress:** Each agent step fires a `status_callback` that updates an inline caption in the Streamlit UI in real-time — no page refresh, no clicking to expand.
-- **Grounded copywriter:** The copywriter system prompt explicitly forbids generic or placeholder text; every sentence must be backed by a named fact, project, metric, or quote from the retrieved chunks.
-- **Dynamic PDF queries:** The planner generates 3–5 document-aware search queries (e.g. methodology/results for a paper; experience/projects for a resume; features/metrics for a spec) that the research node uses instead of a single topic string. Works for any document type. Results are deduplicated across queries.
+- **Skills:** folders under `skills/<name>/SKILL.md` with YAML frontmatter; loaded **per step** via `skill_loader.py`.
+- **RAG:** PyMuPDF text + table blocks + embedded figures (saved under `storage/extracted_images`); Chroma persistence; BM25 re-rank in `rag/retriever.py`.
+- **Visuals:** decision order — **uploaded image > PDF figure > MOCK slide** (Pillow renders real content onto a branded canvas). When a real asset exists the PNG path is served directly; mock slide is only the final fallback.
+- **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl`. Terminal prints structured `[AGENT] IN/OUT` logs per agent step. The UI exposes the latest trace download.
+- **UI progress:** Each agent step fires a `status_callback` updating an inline caption in real-time — no page refresh or clicking required.
+- **Grounded copywriter:** System prompt explicitly forbids generic text; every claim must come from retrieved chunks. Outputs `per_slide_bullets` (real facts per slide) alongside `per_slide_captions`.
+- **Dynamic PDF queries:** Planner generates 3-5 document-aware queries (adapts to resume / paper / spec / any doc type). Research deduplicates across queries.
+- **Auto single-slide:** Image-only input (no PDF, no URL) auto-sets `num_slides=1` for a single-image post per the spec.
 
 See `ARCHITECTURE.md` for a sequence diagram and `PRODUCTION.md` for ops notes.
+
+## Skills
+
+| Skill folder | Loaded by | Purpose |
+|---|---|---|
+| `skills/brand_voice/` | Planner, Copywriter | Tone rules, do/don't examples for chosen voice |
+| `skills/linkedin_formatting/` | Copywriter | Hook patterns, line-break rhythm, hashtag rules, character limits |
+| `skills/citation/` | Copywriter | How to attach `source_id`s to claims and build the sources panel |
+| `skills/image_prompting/` | Visual | Turn slide intent into a concrete image prompt; write alt text for real assets |
+| `skills/critic_rubric/` | Critic | Scoring criteria: factuality vs sources, brand voice, length, accessibility |
+
+Skills are discovered automatically — each agent calls `skill_loader.skill_prompt("<folder>")` for only the skills it needs. No skill is included in every prompt.
 
 ## MCP smoke test (no UI)
 
@@ -70,23 +103,7 @@ PYTHONPATH=. python scripts/smoke_tools.py
 
 Make sure `docker compose up --build` is running, then:
 
-**Step 1 — Initialize session (copy the `mcp-session-id` from the response headers)**
-
-```bash
-curl -s -i -X POST http://localhost:8765/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl-test","version":"1.0"}}}'
-```
-
-Expected response includes:
-```
-mcp-session-id: <SESSION_ID>
-...
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"Agentic Social Media Post Studio"}, ...}}
-```
-
-**Step 2 — Capture the session ID into a shell variable (reused by all tool calls below)**
+**Step 1 — Initialize session**
 
 ```bash
 SESSION=$(curl -s -i -X POST http://localhost:8765/mcp \
@@ -97,7 +114,7 @@ SESSION=$(curl -s -i -X POST http://localhost:8765/mcp \
 echo "Session: $SESSION"
 ```
 
-**Step 3 — List all tools**
+**Step 2 — List all tools**
 
 ```bash
 curl -s -X POST http://localhost:8765/mcp \
@@ -159,11 +176,9 @@ curl -s -X POST http://localhost:8765/mcp \
   -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"pdf_query","arguments":{"pdf_id":"pdf_abc123","question":"What are the key findings?","k":5}}}'
 ```
 
-> **Note:** `curl http://localhost:8765/` returns `404` (root path not mapped) and `curl http://localhost:8765/mcp` without the correct headers returns `406` — both are correct and expected. The MCP protocol requires `POST` to `/mcp` with `Accept: application/json, text/event-stream`.
+> **Note:** `curl http://localhost:8765/` returns `404` and `curl http://localhost:8765/mcp` without correct headers returns `406` — both expected. The MCP protocol requires `POST` to `/mcp` with `Accept: application/json, text/event-stream`.
 
 ## Connecting the MCP server to a client
-
-Streamable HTTP endpoint (FastMCP defaults shown in `.env.example`):
 
 ```json
 {
@@ -175,16 +190,18 @@ Streamable HTTP endpoint (FastMCP defaults shown in `.env.example`):
 }
 ```
 
-Clients differ (Claude Desktop vs Cursor vs MCP Inspector); point them at the URL above once `docker compose up` (or `python -m mcp_server.server`) is running.
+Point Claude Desktop, Cursor, or MCP Inspector at the URL above once `docker compose up` is running.
 
-## Trade-off (what we optimized for)
+## Trade-off (what we optimised for)
 
-We optimized for **a runnable end-to-end path on a laptop**: agents call the same Python tool implementations the MCP server exposes, so Streamlit does not need a fragile in-process HTTP MCP loop. The MCP server remains the **contract surface** (schemas + standalone process) for reviewers and external clients, while the UI and LangGraph stay simple and robust.
+We optimised for **a runnable end-to-end path on a laptop**: agents call the same Python tool implementations the MCP server exposes, so Streamlit does not need a fragile in-process HTTP MCP loop. The MCP server remains the **contract surface** (schemas + standalone process) for reviewers and external clients.
 
 ## What we would extend with two more days
 
 - True **HTTP MCP client** inside LangGraph tool nodes (streaming + retries), plus golden tests against a live MCP container.
-- Stronger **prompt-injection hardening** for `fetch_url` (HTML sanitization policy + CSP-style URL allowlists).
+- Stronger **prompt-injection hardening** for `fetch_url` (HTML sanitisation policy + CSP-style URL allowlists).
+- Real image generation via Stable Diffusion / fal.ai when no asset is uploaded.
+- Streaming agent traces into the UI in real time.
 
 ## References
 

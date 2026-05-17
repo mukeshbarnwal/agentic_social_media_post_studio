@@ -39,12 +39,22 @@ def planner_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
             "tone": state.get("tone"),
             "num_slides": state.get("num_slides", 3),
             "pdf_ids": state.get("pdf_ids", []),
+            "has_uploaded_images": bool(state.get("image_paths")),
             "url_or_query": state.get("url_or_query", ""),
             "sources_overview": {"distinct_pdf_ids": src.get("distinct_pdf_ids", []), "chunk_count": len(src.get("chunks", []))},
+            "note": (
+                "If has_uploaded_images=true and no PDFs, this is a visual-first post. "
+                "The image will be captioned by the Research agent. "
+                "Create slide titles that reflect what the user's topic says about the image — "
+                "do NOT use generic titles like 'Let's Dive Into the Image'."
+            ),
         },
         default=str,
     )
+    print(f"[PLANNER] IN  topic={state.get('topic')!r} | num_slides={state.get('num_slides')} | pdf_ids={state.get('pdf_ids')} | has_images={bool(state.get('image_paths'))} | url={state.get('url_or_query')!r}", flush=True)
     plan = chat_json(sys, user, usage)
+    slide_titles = [s.get("title") for s in (plan.get("slides") or [])]
+    print(f"[PLANNER] OUT needs_web={plan.get('needs_web')} | slides={slide_titles} | pdf_queries={plan.get('pdf_queries')} | tokens={usage}", flush=True)
     trace.log(
         "agent_end",
         agent="planner",
@@ -67,6 +77,7 @@ def research_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
     pdf_queries: list[str] = plan.get("pdf_queries") or []
     if not pdf_queries:
         pdf_queries = [topic] if topic else ["summary overview"]
+    print(f"[RESEARCH] IN  pdf_ids={state.get('pdf_ids')} | pdf_queries={pdf_queries} | url={state.get('url_or_query')!r} | images={state.get('image_paths')}", flush=True)
     for pid in state.get("pdf_ids") or []:
         seen_chunk_ids: set[str] = set()
         for q in pdf_queries:
@@ -112,6 +123,11 @@ def research_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
                 "metadata": {"source_id": cap.get("image_id", img), "modality": "image", "path": img},
             }
         )
+    modalities = {}
+    for c in chunks:
+        m = c.get("metadata", {}).get("modality", "unknown")
+        modalities[m] = modalities.get(m, 0) + 1
+    print(f"[RESEARCH] OUT total_chunks={len(chunks)} | by_modality={modalities} | chunk_ids={[c['chunk_id'] for c in chunks[:5]]}{'...' if len(chunks)>5 else ''}", flush=True)
     return {
         "research_chunks": chunks,
         "token_usage": usage,
@@ -155,11 +171,13 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         },
         default=str,
     )
+    print(f"[COPYWRITER] IN  topic={state.get('topic')!r} | chunks={len(state.get('research_chunks', []))} | tone={state.get('tone')} | slides_in_plan={len((state.get('plan') or {}).get('slides') or [])}", flush=True)
     post = chat_json(sys, user, usage)
     if state.get("user_edited_hook"):
         post["hook"] = state["user_edited_hook"]
     if state.get("user_edited_body"):
         post["body"] = state["user_edited_body"]
+    print(f"[COPYWRITER] OUT hook={post.get('hook','')[:80]!r} | hashtags={post.get('hashtags')} | source_markers={post.get('source_markers')} | per_slide_bullets_count={len(post.get('per_slide_bullets') or [])} | tokens={usage}", flush=True)
     trace.log("agent_end", agent="copywriter", source_markers=post.get("source_markers", []))
     return {"post": post, "token_usage": usage, "trace": [{"event": "copywriter", "post": post}]}
 
@@ -179,6 +197,7 @@ def visual_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
     post_out = state.get("post") or {}
     copy_bullets = post_out.get("per_slide_bullets") or []   # real grounded bullets from Copywriter
     copy_captions = post_out.get("per_slide_captions") or []
+    print(f"[VISUAL] IN  slides={len(plan_slides)} | treatment={'uploaded_image' if imgs else 'pdf_figure' if fig_paths else 'generate_mock'} | has_copy_bullets={bool(copy_bullets)}", flush=True)
 
     for i, sl in enumerate(plan_slides):
         treatment = "generate_mock"
@@ -199,14 +218,20 @@ def visual_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         vis = chat_json(sys, user, usage) if not mock_models() else {}
         alt = vis.get("alt_text") or f"Alt text for slide {i+1}: {sl.get('title','')}"
         prompt = vis.get("image_prompt") or f"LinkedIn illustration for: {sl.get('title')}"
-        out_path = _render_mock_slide(
-            i,
-            title=sl.get("title", f"Slide {i+1}"),
-            bullets=bullets,
-            caption=cap,
-            prompt=prompt,
-            color=state.get("brand_color") or "#1d3557",
-        )
+
+        # Use real asset when available; only render mock slide as fallback
+        if treatment in ("uploaded_image", "pdf_figure") and asset_path and Path(asset_path).exists():
+            rendered_path = asset_path
+        else:
+            rendered_path = str(_render_mock_slide(
+                i,
+                title=sl.get("title", f"Slide {i+1}"),
+                bullets=bullets,
+                caption=cap,
+                prompt=prompt,
+                color=state.get("brand_color") or "#1d3557",
+            ))
+
         slides_out.append(
             {
                 "index": i,
@@ -214,12 +239,14 @@ def visual_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
                 "bullets": bullets,
                 "caption": cap,
                 "treatment": treatment,
-                "asset_path": asset_path or str(out_path),
-                "rendered_path": str(out_path),
+                "asset_path": asset_path or rendered_path,
+                "rendered_path": rendered_path,
                 "image_prompt": prompt,
                 "alt_text": alt,
             }
         )
+    for s in slides_out:
+        print(f"[VISUAL] OUT slide={s['index']+1} | title={s['title']!r} | treatment={s['treatment']} | rendered={s['rendered_path']}", flush=True)
     trace.log("agent_end", agent="visual", slides=len(slides_out))
     return {"slides": slides_out, "token_usage": usage, "trace": [{"event": "visual", "slides": slides_out}]}
 
@@ -338,6 +365,7 @@ def critic_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         },
         default=str,
     )
+    print(f"[CRITIC] IN  grounded={grounded} | fmt_ok={fmt_ok} | source_markers={list(markers)[:5]} | iteration={state.get('critic_iterations',0)+1}", flush=True)
     report = chat_json(sys, user, usage)
     if not report:
         report = {
@@ -346,6 +374,7 @@ def critic_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
             "issues": [] if grounded and fmt_ok else ["Add explicit source_markers from research chunk ids."],
             "route": "end" if grounded and fmt_ok else "copywriter",
         }
+    print(f"[CRITIC] OUT pass={report.get('pass')} | scores={report.get('scores')} | route={report.get('route')} | issues={report.get('issues')} | tokens={usage}", flush=True)
     trace.log("agent_end", agent="critic", report=report)
     it = int(state.get("critic_iterations") or 0) + 1
     return {"critic_report": report, "critic_iterations": it, "token_usage": usage, "trace": [{"event": "critic", "report": report}]}

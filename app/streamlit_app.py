@@ -45,6 +45,7 @@ def main() -> None:
         tone = st.selectbox("Tone", ["formal", "casual", "punchy"], index=1)
         target_length = st.selectbox("Target length", ["short", "medium", "long"], index=1)
         num_slides = st.slider("Slides (carousel)", 1, 8, 3)
+        st.caption("Auto-set to 1 when only an image is uploaded (single-image post).")
         brand_color = st.color_picker("Brand tint (mock slides)", "#1d3557")
 
     col1, col2 = st.columns((1, 1))
@@ -98,11 +99,17 @@ def main() -> None:
                 image_paths.append(str(dest))
                 _show_step(f"🖼️ Uploaded image **{im.name}**")
 
+        # Flow 3: image-only (no PDF, no URL) → single-image post
+        is_image_only = bool(image_paths) and not pdf_ids and not url_or_query.strip()
+        effective_slides = 1 if is_image_only else int(num_slides)
+        if is_image_only:
+            _show_step("🖼️ Image-only input detected — generating single-image post")
+
         initial: StudioState = {
             "topic": topic or "General LinkedIn update",
             "tone": tone,
             "target_length": target_length,  # type: ignore[assignment]
-            "num_slides": int(num_slides),
+            "num_slides": effective_slides,
             "brand_color": brand_color,
             "pdf_ids": pdf_ids,
             "image_paths": image_paths,

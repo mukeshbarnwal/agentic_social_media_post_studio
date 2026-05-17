@@ -47,8 +47,8 @@ sequenceDiagram
 |------|----------------|----------------|
 | Planner | Slide plan, whether web grounding is needed | `list_sources`, `brand_voice` excerpt |
 | Research | Grounding pack | `pdf_query`, `fetch_url`, `web_search`, caption helper for uploads |
-| Copywriter | Hook/body/hashtags/CTA + slide captions | `linkedin_formatting`, `citation`, `brand_voice` |
-| Visual | Treatment + alt text + mock renders | `image_prompting` |
+| Copywriter | Hook/body/hashtags/CTA + `per_slide_captions` + `per_slide_bullets` (grounded, no placeholders) | `linkedin_formatting`, `citation`, `brand_voice` |
+| Visual | Treatment decision (uploaded > PDF figure > mock), alt text, real asset path or mock render | `image_prompting` |
 | Critic | Rubric + routing | `critic_rubric` |
 
 ## Skills discovery / loading
