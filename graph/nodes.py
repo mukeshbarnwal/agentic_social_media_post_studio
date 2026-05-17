@@ -195,6 +195,33 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
     )
     print(f"[COPYWRITER] IN  topic={state.get('topic')!r} | chunks={len(state.get('research_chunks', []))} | tone={state.get('tone')} | slides_in_plan={len((state.get('plan') or {}).get('slides') or [])} | edit_hook={state.get('user_edited_hook')!r} | edit_body={state.get('user_edited_body')!r}", flush=True)
     post = chat_json(sys, user, usage)
+
+    # Fallback: if per_slide_bullets are missing or generic, extract from the grounded body text.
+    # Generic bullets contain no numbers or proper nouns — detected by absence of digits and
+    # short sentence length with vague verbs.
+    num_slides = len((state.get("plan") or {}).get("slides") or []) or 1
+    psb = post.get("per_slide_bullets") or []
+    # Generic structural bullets never contain digits; grounded PDF bullets almost always do
+    # (years, percentages, measurements, counts). Use digits-only as the grounding signal.
+    needs_fallback = (
+        not psb
+        or len(psb) < num_slides
+        or all(
+            not any(c.isdigit() for c in "".join(inner if isinstance(inner, list) else [inner]))
+            for inner in psb[:3]
+        )
+    )
+    if needs_fallback:
+        body_text = post.get("body") or post.get("hook") or ""
+        sentences = [s.strip() for s in body_text.replace("\n", " ").split(".") if len(s.strip()) > 20]
+        chunk_size = max(1, len(sentences) // num_slides)
+        fallback_bullets: list[list[str]] = []
+        for i in range(num_slides):
+            chunk = sentences[i * chunk_size: (i + 1) * chunk_size] or sentences[:3]
+            fallback_bullets.append(chunk[:4])
+        post["per_slide_bullets"] = fallback_bullets
+        print(f"[COPYWRITER] WARN per_slide_bullets were generic/missing — extracted from body text ({len(sentences)} sentences → {num_slides} slides)", flush=True)
+
     print(f"[COPYWRITER] OUT hook={post.get('hook','')[:80]!r} | hashtags={post.get('hashtags')} | source_markers={post.get('source_markers')} | per_slide_bullets_count={len(post.get('per_slide_bullets') or [])} | tokens={usage}", flush=True)
     trace.log("agent_end", agent="copywriter", source_markers=post.get("source_markers", []))
     return {"post": post, "token_usage": usage, "trace": [{"event": "copywriter", "post": post}]}
@@ -311,8 +338,8 @@ def _render_mock_slide(
 
     # Title
     y = 130
-    _draw_wrapped(d, title.upper(), font_title, "white", 60, y, W - 60, line_height=58)
-    y += _text_height(title, W - 120, 58) + 30
+    y = _draw_wrapped(d, title.upper(), font_title, "white", 60, y, W - 60, line_height=58)
+    y += 20
 
     # Divider line
     d.rectangle([60, y, W - 60, y + 4], fill="white")
@@ -321,8 +348,8 @@ def _render_mock_slide(
     # Bullets (use ASCII dash — Pillow's default bitmap font has no glyph for •)
     for b in bullets[:6]:
         bullet_text = f"- {b}"
-        _draw_wrapped(d, bullet_text, font_body, "#e0e0e0", 60, y, W - 60, line_height=36)
-        y += _text_height(bullet_text, W - 120, 36) + 10
+        y = _draw_wrapped(d, bullet_text, font_body, "#e0e0e0", 60, y, W - 60, line_height=36)
+        y += 14  # gap between bullets
 
     # Caption (bottom)
     if caption:
@@ -338,7 +365,8 @@ def _render_mock_slide(
 
 
 def _draw_wrapped(draw: "ImageDraw.ImageDraw", text: str, font: "ImageFont.ImageFont",
-                  fill: str, x: int, y: int, max_x: int, line_height: int) -> None:
+                  fill: str, x: int, y: int, max_x: int, line_height: int) -> int:
+    """Draw word-wrapped text and return the y position after the last line."""
     words = text.split()
     line: list[str] = []
     for word in words:
@@ -355,12 +383,9 @@ def _draw_wrapped(draw: "ImageDraw.ImageDraw", text: str, font: "ImageFont.Image
             line.append(word)
     if line:
         draw.text((x, y), " ".join(line), fill=fill, font=font)
+        y += line_height
+    return y
 
-
-def _text_height(text: str, max_width_chars: int, line_height: int) -> int:
-    words = text.split()
-    lines = max(1, len(words) // max(1, max_width_chars // 8))
-    return lines * line_height
 
 
 def critic_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:

@@ -181,11 +181,20 @@ def main() -> None:
         st.subheader("Carousel / visuals")
         for s in man.get("slides") or []:
             with st.container(border=True):
-                st.write(f"**Slide {s.get('index',0)+1} — {s.get('title','')}** ({s.get('treatment')})")
+                treatment = s.get("treatment", "")
+                st.write(f"**Slide {s.get('index',0)+1} — {s.get('title','')}** ({treatment})")
                 p = Path(s.get("rendered_path") or "")
                 if p.exists():
                     st.image(str(p), caption=s.get("alt_text", ""))
-                st.caption(s.get("caption", ""))
+                # Always show bullets for pdf_figure and uploaded_image treatments
+                # (mock slides have bullets baked into the PNG; real assets don't)
+                if treatment in ("pdf_figure", "uploaded_image"):
+                    bullets = s.get("bullets") or []
+                    if bullets:
+                        for b in bullets:
+                            st.markdown(f"- {b}")
+                if s.get("caption"):
+                    st.caption(s.get("caption", ""))
 
         st.subheader("Sources panel")
         st.dataframe(man.get("sources", []), use_container_width=True)
