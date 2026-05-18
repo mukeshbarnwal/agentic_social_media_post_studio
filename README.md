@@ -217,10 +217,11 @@ We optimised for **a runnable end-to-end path on a laptop**: agents call the sam
 
 ## What we would extend with two more days
 
-- True **HTTP MCP client** inside LangGraph tool nodes (streaming + retries), plus golden tests against a live MCP container.
-- Stronger **prompt-injection hardening** for `fetch_url` (HTML sanitisation policy + CSP-style URL allowlists).
-- Real image generation via Stable Diffusion / fal.ai when no asset is uploaded.
-- Streaming agent traces into the UI in real time.
+- Once a user posts content on LinkedIn, displaying what all questions or comments might he or she expect from users on LinkedIn on that post.
+- Write linkedin posts according to the user style of writing
+- We can also give an estimate or prediction of how many likes or comments this Ai generated post might receive on LinkedIn. Based on past historical data- data would have a LinkedIn post and corresponding likes/comments.
+- Implement observability in Langsmith for better tracking and testing multiple examples at the same time
+
 
 ## References
 
