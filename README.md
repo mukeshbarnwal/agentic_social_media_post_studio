@@ -213,7 +213,11 @@ Point Claude Desktop, Cursor, or MCP Inspector at the URL above once `docker com
 
 ## Trade-off (what we optimised for)
 
-We optimised for **a runnable end-to-end path on a laptop**: agents call the same Python tool implementations the MCP server exposes, so Streamlit does not need a fragile in-process HTTP MCP loop. The MCP server remains the **contract surface** (schemas + standalone process) for reviewers and external clients.
+1. The system prioritizes agent orchestration and transparency over maximum model complexity. Focus was placed on multi-agent coordination, MCP-based tooling, shared state, critic rerouting, and partial reruns instead of heavier multimodal models.
+This made the workflow easier to debug, evaluate, and reason about while still supporting multimodal grounding.
+2. Given the 4-day scope, the project prioritized clear multi-agent orchestration and observable workflow design over maximum model sophistication.
+The system focused on explicit agent boundaries, shared state, critic-driven rerouting, multimodal grounding, and partial reruns.
+For reproducibility and local execution, heavy vision/image models were replaced with deterministic mocks using MOCK_MODELS=true.
 
 ## What we would extend with two more days
 
