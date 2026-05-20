@@ -1,6 +1,6 @@
 # Agentic Social Media Post Studio
 
-Proof-of-concept for a **multi-agent LinkedIn post studio** with a **custom MCP server**, **on-demand `SKILL.md` skills**, **Chroma multimodal RAG**, **LangGraph handoffs**, **JSONL tracing**, and a **Streamlit** UI. Heavy models can be disabled with **`MOCK_MODELS=true`** while still exercising the full control flow.
+Proof-of-concept for a **multi-agent LinkedIn post studio** with a **custom MCP server**, **on-demand `SKILL.md` skills**, **Chroma multimodal RAG**, **LangGraph handoffs**, **JSONL + interaction logging**, optional **LangSmith** tracing, and a **Streamlit** UI. Heavy models can be disabled with **`MOCK_MODELS=true`** while still exercising the full control flow.
 
 ## Quickstart (local)
 
@@ -86,7 +86,15 @@ Set `MOCK_MODELS=true` in `.env` (or `export MOCK_MODELS=true` locally) to swap 
 | **1 — PDF carousel** | PDF + topic + N slides | Indexes PDF into Chroma, planner generates document-aware queries, research retrieves grounded chunks, copywriter writes slide-by-slide bullets from actual content, visual renders slides |
 | **2 — URL / web search** | Topic + URL or search query | `fetch_url` strips and chunks the page into Chroma (URL) or `web_search` returns snippets (query); copywriter grounds post in web content |
 | **3 — Single image post** | Image + topic | Research captions the image; copywriter writes post around the caption; visual uses the real uploaded image; `num_slides` auto-set to 1 |
-| **4 — Partial rerun** | Edited hook/body | Keeps prior plan + research; re-runs copywriter → visual → critic only |
+| **4 — Partial rerun** | Hook/body edit + **Rerun from edited copy only** | Skips planner + research; copywriter applies edits → visual → critic (see below) |
+
+### Partial rerun (flow 4)
+
+1. Run **Generate post** once (URL, PDF, or topic).
+2. Enter text in **Hook edit** and/or **Body edit** (e.g. `make it punchier`, or paste replacement copy).
+3. Click **Rerun from edited copy only** — not **Generate post** again.
+
+Keeps `plan` and `research_chunks`; only `user_edited_hook` / `user_edited_body` you typed are sent (empty fields are not filled with old hook/body).
 
 ## Latest automated evals
 
@@ -118,25 +126,39 @@ Results are written to `evals/latest_results.json`.
 
 ## Architecture (short)
 
-- **Shared state:** `graph/state.py` (`StudioState`) — TypedDict blackboard; `trace` and `token_usage` use reducers.
-- **Graph:** `graph/workflow.py` — `planner → research → copywriter → visual → critic` with critic loops routing back to `copywriter`, `visual`, or `research` until pass or iteration cap (max 3). Each routing decision is logged as a `critic_routing` trace event with destination, iteration count, and whether the cap was hit.
-- **MCP tools** (implemented in `mcp_server/tool_runtime.py`, exposed via FastMCP in `mcp_server/server.py`):
-  - `web_search(query, max_results=5)` → ranked `{title,url,snippet}` (MOCK unless `TAVILY_API_KEY`, with DuckDuckGo lite fallback)
-  - `fetch_url(url)` → `{markdown, image_urls, web_source_id}` — chunks and embeds into Chroma
-  - `pdf_query(pdf_id, question, k)` → top-k chunks `{chunk_id,text,metadata}`
-  - `index_pdf(file_path)` → `{pdf_id}` (must be under `storage/uploads`)
-  - `list_sources()` → chunk listing + distinct `pdf_id`s
-- **Skills:** folders under `skills/<name>/SKILL.md` with YAML frontmatter; loaded **per step** via `skill_loader.py`.
-- **RAG:** PyMuPDF text + table blocks + embedded figures (saved under `storage/extracted_images`); Chroma persistence; BM25 re-rank in `rag/retriever.py`.
-- **Visuals:** decision order — **uploaded image > PDF figure > MOCK slide** (Pillow renders real content onto a branded canvas). When a real asset exists the PNG path is served directly; mock slide is only the final fallback.
-- **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl`. Terminal prints structured `[AGENT] IN/OUT` logs per agent step. The UI exposes the latest trace download. Critic runs emit two events per iteration: `agent_end` (with `critic_iteration`, `max_retries_reached`, `passed`, `scores`, `issues`) and `critic_routing` (with `destination` and reason), making the bounded retry loop fully visible in the trace. Optional **LangSmith** tracing (`observability/langsmith_setup.py`) records LangGraph runs and `ChatOpenAI` spans when `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` are set.
-- **UI progress:** Each agent step fires a `status_callback` updating an inline caption in real-time — no page refresh or clicking required.
-- **Grounded copywriter:** System prompt explicitly forbids generic text; every claim must come from retrieved chunks. Outputs `per_slide_bullets` (real facts per slide) alongside `per_slide_captions`.
-- **Dynamic PDF queries:** Planner generates 3-5 document-aware queries (adapts to resume / paper / spec / any doc type). Research deduplicates across queries.
-- **Auto single-slide:** Image-only input (no PDF, no URL) auto-sets `num_slides=1` for a single-image post per the spec.
-- **Action-style topics:** If the topic field is an instruction rather than a subject (e.g. `"write linkedin summary"`, `"summarize this"`), the Planner and Copywriter treat the uploaded image or retrieved content as the post subject — the topic is the user's intent verb, not the post theme.
+```text
+Planner → Research → Copywriter → Visual → Critic ⟲ (max 3) → Assemble → UI
+```
 
-See `ARCHITECTURE.md` for a sequence diagram and `PRODUCTION.md` for ops notes.
+| Component | Summary |
+|-----------|---------|
+| **State** | `graph/state.py` — `StudioState` blackboard (`plan`, `research_chunks`, `post`, `slides`, …) |
+| **Graph** | `graph/workflow.py` — critic routes to `copywriter` / `visual` / `research` or `assemble` |
+| **MCP** | `web_search`, `fetch_url`, `pdf_query`, `index_pdf`, `list_sources` — see `mcp_server/tool_runtime.py` |
+| **RAG** | PyMuPDF ingest → Chroma; BM25 re-rank in `rag/retriever.py` |
+| **Visuals** | uploaded image > PDF figure > mock Pillow slide |
+| **Grounding** | `source_markers` must reference retrieved `chunk_id`s (critic pre-check) |
+
+**Observability**
+
+| Layer | Where |
+|-------|--------|
+| Agent steps + tool calls | `storage/runs/<run_id>.jsonl` — download in UI |
+| Query + output (batch eval) | `storage/interactions/interactions.jsonl` — `scripts/analyze_interactions.py` |
+| LLM / graph debug | LangSmith — see [LangSmith observability](#langsmith-observability) |
+
+See **`ARCHITECTURE.md`** for diagrams (full + partial rerun), agent roster, and grounding contract. See **`PRODUCTION.md`** for ops notes.
+
+## Environment variables (common)
+
+| Variable | Purpose |
+|----------|---------|
+| `MOCK_MODELS` | `true` = deterministic LLM/search stubs |
+| `OPENAI_API_KEY` | Live chat + embeddings + vision caption |
+| `TAVILY_API_KEY` | Live web search (optional) |
+| `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` | LangSmith traces |
+| `INTERACTION_LOG_DISABLED` | Set `true` to skip interaction JSONL |
+| `CHROMA_PERSIST_DIR` | Vector store path (default `storage/chroma`) |
 
 ## Skills
 
@@ -259,10 +281,11 @@ For reproducibility and local execution, heavy vision/image models were replaced
 
 ## What we would extend with two more days
 
-- Once a user posts content on LinkedIn, displaying what all questions or comments might he or she expect from users on LinkedIn on that post.
-- Write linkedin posts according to the user style of writing
-- We can also give an estimate or prediction of how many likes or comments this Ai generated post might receive on LinkedIn. Based on past historical data- data would have a LinkedIn post and corresponding likes/comments.
-- Implement observability in Langsmith for better tracking and testing multiple examples at the same time
+- Predict likely LinkedIn comments/questions on a generated post.
+- Personal tone model trained on the user's past posts.
+- Engagement estimate (likes/comments) from historical post data.
+- Gold-set eval with LLM-as-judge + `@traceable` MCP spans in LangSmith.
+- Vision captions for PDF figures at ingest so carousel can use real PDF images reliably.
 
 
 ## References
