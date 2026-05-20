@@ -159,11 +159,11 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         "real technologies used, and concrete results/numbers mentioned.\n"
         "3. Never write generic sentences like 'I worked on diverse projects' — always name the actual project.\n"
         "4. Populate source_markers with the chunk_ids you directly used.\n"
-        "5. If edit_hook or edit_body are provided:\n"
-        "   - Treat them as EDITING INSTRUCTIONS or replacement text from the user.\n"
-        "   - If the value looks like an instruction (imperative, short), apply it to rewrite the relevant field.\n"
-        "   - If it looks like full replacement text, use it verbatim for that field.\n"
-        "   - Either way, keep all other fields consistent and grounded.\n"
+        "5. If edit_hook or edit_body are provided (non-null in the user JSON):\n"
+        "   - You MUST change that field — output must not be identical to prior_hook / prior_body for edited fields.\n"
+        "   - Treat as EDITING INSTRUCTIONS (e.g. 'make it punchier') or full replacement text.\n"
+        "   - If only edit_hook is set, rewrite hook only; if only edit_body is set, rewrite body only.\n"
+        "   - Keep other fields consistent and grounded in research_excerpt.\n"
         "Return JSON keys: hook, body, hashtags (array of 3-5 relevant tags), cta, "
         "source_markers (array of chunk_ids you relied on), "
         "per_slide_captions (array of short captions aligned to plan slides), "
@@ -179,6 +179,7 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
         f"LinkedIn skill:\n{li[:2000]}\nCitation skill:\n{cit[:1500]}\nBrand:\n{brand[:1500]}"
     )
     prior_post = state.get("post") or {}
+    partial = state.get("rerun_scope") == "copywriter"
     user = json.dumps(
         {
             "topic": state.get("topic"),
@@ -190,9 +191,15 @@ def copywriter_node(state: StudioState, trace: RunTrace) -> dict[str, Any]:
             "prior_body": prior_post.get("body"),
             "edit_hook": state.get("user_edited_hook"),
             "edit_body": state.get("user_edited_body"),
+            "partial_rerun": partial,
         },
         default=str,
     )
+    if partial and (state.get("user_edited_hook") or state.get("user_edited_body")):
+        sys += (
+            "\nPARTIAL RERUN: apply edit_hook and/or edit_body now; "
+            "revised hook/body must clearly reflect the user's edit.\n"
+        )
     print(f"[COPYWRITER] IN  topic={state.get('topic')!r} | chunks={len(state.get('research_chunks', []))} | tone={state.get('tone')} | slides_in_plan={len((state.get('plan') or {}).get('slides') or [])} | edit_hook={state.get('user_edited_hook')!r} | edit_body={state.get('user_edited_body')!r}", flush=True)
     post = chat_json(sys, user, usage)
 

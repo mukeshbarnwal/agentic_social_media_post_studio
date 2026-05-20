@@ -17,6 +17,10 @@ from dotenv import load_dotenv
 
 load_dotenv(_ROOT / ".env")
 
+from observability.langsmith_setup import configure_langsmith, is_langsmith_enabled
+
+configure_langsmith()
+
 import streamlit as st
 
 from graph.state import StudioState
@@ -31,42 +35,103 @@ def _upload_dir() -> Path:
     return d
 
 
+def _inject_ui_styles() -> None:
+    """Large base typography for readability on wide layouts."""
+    st.markdown(
+        """
+        <style>
+        html, body, .stApp {
+            font-size: 20px !important;
+        }
+        .stApp h1 {
+            font-size: 2.5rem !important;
+            line-height: 1.2 !important;
+        }
+        .stApp h2 { font-size: 1.85rem !important; }
+        .stApp h3, .stApp h4, .stApp h5 {
+            font-size: 1.5rem !important;
+        }
+        .stApp p, .stApp li, .stApp label,
+        .stApp [data-testid="stMarkdownContainer"] p,
+        .stApp [data-testid="stMarkdownContainer"] li {
+            font-size: 1.25rem !important;
+            line-height: 1.55 !important;
+        }
+        .stApp textarea,
+        .stApp input,
+        .stApp [data-baseweb="input"] input,
+        .stApp [data-baseweb="textarea"] textarea,
+        .stApp [data-baseweb="select"] > div {
+            font-size: 1.2rem !important;
+            line-height: 1.5 !important;
+        }
+        .stApp button, .stApp button p {
+            font-size: 1.2rem !important;
+        }
+        .stApp .stCaption, .stApp [data-testid="stCaptionContainer"] {
+            font-size: 1.1rem !important;
+        }
+        .stApp [data-testid="stAlert"] p,
+        .stApp [data-testid="stAlert"] div {
+            font-size: 1.15rem !important;
+        }
+        .stApp [data-testid="stDataFrame"] {
+            font-size: 1.1rem !important;
+        }
+        .stApp pre, .stApp code {
+            font-size: 1.05rem !important;
+        }
+        .stApp [data-testid="stSidebar"] {
+            font-size: 1.15rem !important;
+        }
+        .stApp [data-testid="stSidebar"] label {
+            font-size: 1.15rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="Agentic Social Media Post Studio", layout="wide")
+    _inject_ui_styles()
     st.title("Agentic Social Media Post Studio")
-    st.caption("Multi-agent LinkedIn studio with MCP tools, Chroma RAG, and MOCK_MODELS-friendly stubs.")
+    st.caption("Multi-agent LinkedIn studio with MCP tools and Observability.")
 
     mock = os.getenv("MOCK_MODELS", "").lower() in ("1", "true", "yes")
-    if mock:
-        st.info("MOCK_MODELS is enabled: deterministic LLM + search stubs; full flow still runs.")
 
     with st.sidebar:
         st.header("Style")
         tone = st.selectbox("Tone", ["formal", "casual", "punchy"], index=1)
         target_length = st.selectbox("Target length", ["short", "medium", "long"], index=1)
         num_slides = st.slider("Slides (carousel)", 1, 8, 3)
-        st.caption("Auto-set to 1 when only an image is uploaded (single-image post).")
+        st.caption("Auto-set to 1 when only one image is uploaded")
         brand_color = st.color_picker("Brand tint (mock slides)", "#1d3557")
 
-    col1, col2 = st.columns((1, 1))
-    with col1:
-        topic = st.text_area("Topic / brief", height=140, placeholder="What should the post accomplish?")
+        st.divider()
+        st.header("Observability")
+        if mock:
+            st.info("MOCK_MODELS on — stub LLM/search; full pipeline still runs.")
+        if is_langsmith_enabled():
+            project = os.getenv("LANGSMITH_PROJECT") or os.getenv("LANGCHAIN_PROJECT") or "default"
+            #st.success(f"LangSmith **{project}**")
+            st.link_button("View LangSmith", "https://smith.langchain.com")
+        else:
+            st.caption("LangSmith is off — set `LANGSMITH_TRACING` + `LANGSMITH_API_KEY` in `.env`.")
+
+    col_main, col_rerun = st.columns((3, 1))
+    with col_main:
+        topic = st.text_area("Topic / brief", height=160, placeholder="What should the post accomplish?")
         url_or_query = st.text_input("URL or web search query (optional)", placeholder="https://… or a short query")
         pdfs = st.file_uploader("PDFs (optional)", type=["pdf"], accept_multiple_files=True)
         imgs = st.file_uploader("Images (optional)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
-    with col2:
-        st.subheader("Partial rerun (no full regeneration)")
-        st.caption("Give an editing instruction or replacement text — copywriter → visual → critic re-run while keeping prior research/plan.")
-        edited_hook = st.text_input(
-            "Hook edit instruction or replacement (optional)",
-            placeholder="e.g. 'make it punchier' or paste your own hook",
-        )
-        edited_body = st.text_area(
-            "Body edit instruction or replacement (optional)",
-            height=120,
-            placeholder="e.g. 'emphasise business impact over technical detail' or 'condense to three key takeaways'",
-        )
+    with col_rerun:
+        st.markdown("##### Partial rerun")
+        #st.caption("Edit hook/body → copywriter → visual → critic (keeps plan + research).")
+        edited_hook = st.text_input("Hook edit", placeholder="e.g. make it punchier")
+        edited_body = st.text_area("Body edit", height=100, placeholder="e.g. emphasise impact")
 
     run = st.button("Generate post", type="primary")
 
@@ -121,13 +186,13 @@ def main() -> None:
             "pdf_ids": pdf_ids,
             "image_paths": image_paths,
             "url_or_query": url_or_query,
-            "user_edited_hook": edited_hook or None,
-            "user_edited_body": edited_body or None,
+            "user_edited_hook": (edited_hook or "").strip() or None,
+            "user_edited_body": (edited_body or "").strip() or None,
             "rerun_scope": "full",
             "critic_iterations": 0,
         }
 
-        out, trace = run_studio(initial, status_callback=_show_step)
+        out, trace = run_studio(initial, status_callback=_show_step, log_source="streamlit")
         step_placeholder.empty()
 
         st.session_state.last_state = out
@@ -152,8 +217,13 @@ def main() -> None:
         )
         slim: StudioState = {k: prev[k] for k in allowed if k in prev}  # type: ignore[misc]
         slim["rerun_scope"] = "copywriter"
-        slim["user_edited_hook"] = edited_hook or (prev.get("post") or {}).get("hook")
-        slim["user_edited_body"] = edited_body or (prev.get("post") or {}).get("body")
+        # Only pass fields the user actually edited (do not fall back to prior hook/body —
+        # that tells the copywriter to keep them unchanged).
+        slim["user_edited_hook"] = (edited_hook or "").strip() or None
+        slim["user_edited_body"] = (edited_body or "").strip() or None
+        if not slim["user_edited_hook"] and not slim["user_edited_body"]:
+            st.warning("Enter a hook and/or body edit before partial rerun.")
+            st.stop()
         slim["critic_iterations"] = 0
         slim["critic_report"] = {}
         p_placeholder = st.empty()
@@ -161,7 +231,7 @@ def main() -> None:
         def _show_partial(msg: str) -> None:
             p_placeholder.caption(f"⏳ {msg}")
 
-        out, trace = run_studio(slim, status_callback=_show_partial)
+        out, trace = run_studio(slim, status_callback=_show_partial, log_source="streamlit_partial")
         p_placeholder.empty()
         st.session_state.last_state = out
         st.session_state.last_manifest = out.get("manifest")

@@ -74,7 +74,7 @@ embedded images.
 © Optional carousel of additional slides, each with image + caption + alt text.
 * A sources panel listing every PDF page, URL, and image that grounded the output.
 
-* ALinkedIn-style live preview and a download (PNG per slide, plus a JSON manifest of the run).
+* A LinkedIn-style live preview and a download (PNG per slide, plus a JSON manifest of the run).
 
 3.3 Required user flows
 
@@ -83,8 +83,7 @@ with citations.
 
 2. User gives only a topic and a URL; the web search / fetch path grounds the output.
 
-3. User uploads an image and asks for a single-image post with copy around it; the visual agent
-writes alt text and the copywriter writes around the visual.
+3. User uploads an image and asks for a single-image post with copy around it; the visual agent writes alt text and the copywriter writes around the visual.
 
 4. User edits a generated caption; downstream agents re-run only what is affected (no full
 regeneration).
@@ -96,8 +95,7 @@ We do not score framework choice. We score the design.
 
 4.1 Minimum agent roster
 
-At least the following roles must exist as separately addressable agents with their own prompts, tools,
-and (where useful) memory:
+At least the following roles must exist as separately addressable agents with their own prompts, tools, and (where useful) memory:
 
 Agent Responsibility | Tools it should have
 Planner / Decomposes the user goal into a slide- Internal task graph, ability to
@@ -147,8 +145,7 @@ condition.
 
 4.3 Skills as SKILL.md files
 
-Adopt the agent-skills pattern: a skill is a folder containing a SKILL.md plus any helper assets. The
-SKILL.md has a short YAML formatter with a name and a description, and a body explaining when and
+Adopt the agent-skills pattern: a skill is a folder containing a SKILL.md plus any helper assets. The SKILL.md has a short YAML formatter with a name and a description, and a body explaining when and
 how to use the skill. Agents load only the skills relevant to the current step rather than carrying all
 instructions in the base prompt.
 
@@ -274,11 +271,9 @@ Al Engineer Case Study
 ¢ README must show the latest eval results.
 
 9. Observability
-* Trace every run: agent name, step number, tool calls with inputs/outputs, retrieved chunk ids,
-token usage.
+* Trace every run: agent name, step number, tool calls with inputs/outputs, retrieved chunk ids, token usage.
 
-* Acceptable backends: Langfuse, Phoenix/Arize, LangSmith, OpenTelemetry to a local collector, or
-a well-structured JSONL run log with a small viewer.
+* Acceptable backends: Langfuse, Phoenix/Arize, LangSmith, OpenTelemetry to a local collector, or a well-structured JSONL run log with a small viewer.
 
 * From the UI, the user should be able to open the trace of the most recent run.
 
@@ -335,10 +330,9 @@ with schemas, eval results, mock-mode instructions, productionization notes.
 post).
 
 13. docker-compose.yml plus .env.example.
-14. A2to4 minute demo video (Loom, screen recording, or GIF) walking through one complete run.
+14. A 2to4 minute demo video (Loom, screen recording, or GIF) walking through one complete run.
 
-15. A short PRODUCTION.md (one page) covering: how you would scale this, where the bottlenecks
-are, how you would handle PIl in uploaded PDFs, and how you would monitor drift.
+15. A short PRODUCTION.md (one page) covering: how you would scale this, where the bottlenecks are, how you would handle PIl in uploaded PDFs, and how you would monitor drift.
 
 13. How we score
 

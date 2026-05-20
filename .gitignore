@@ -27,6 +27,9 @@ storage/extracted_images/
 # Run traces (too large / noisy for git)
 storage/runs/
 
+# Query/output logs for offline analysis
+storage/interactions/
+
 # macOS
 .DS_Store
 .AppleDouble

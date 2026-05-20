@@ -16,6 +16,44 @@ streamlit run app/streamlit_app.py
 
 Open `http://localhost:8501`.
 
+## Interaction logs (query + output)
+
+Every studio run (Streamlit, evals, scripts) appends one row to **`storage/interactions/interactions.jsonl`** and writes **`storage/interactions/<run_id>.json`** with:
+
+- **Input:** topic, tone, slides, `pdf_ids`, images, URL/query, rerun scope, edits  
+- **Output:** hook, body, hashtags, slides summary, critic pass/route/issues, chunk ids, token usage  
+- **Links:** `trace_path` to the agent JSONL under `storage/runs/`
+
+Summarize 100+ runs without opening LangSmith:
+
+```bash
+PYTHONPATH=. python scripts/analyze_interactions.py
+```
+
+Disable with `INTERACTION_LOG_DISABLED=true` in `.env`.
+
+## LangSmith observability
+
+1. Add to `.env` (copy from `.env.example`):
+
+```bash
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_...   # your key
+LANGSMITH_PROJECT=agentic-social-post-studio
+```
+
+2. Restart the app (`docker compose restart app` or restart Streamlit locally).
+
+3. Generate a post in the UI. Open [smith.langchain.com](https://smith.langchain.com) → project **agentic-social-post-studio** → **Tracing** → **Runs**.
+
+4. **Open the tree, not the flat list:** click the run named **`agentic_social_post_studio`** (root). In the run detail page, use the **Waterfall** / **Trace** tab — you should see nested spans: `planner` → `research` → `copywriter` → `visual` → `critic` → `critic_router` → … → `assemble`, each with `ChatOpenAI` children where applicable.
+
+The **Runs table** often lists every `ChatOpenAI` call as its own row; those are child spans. Filter or sort by **start time** and open the parent run whose name is **`agentic_social_post_studio`**, not the individual LLM rows.
+
+Each root run has tags `studio` and `mock` or `live`. Agent steps are explicit `@traceable` spans (`planner`, `research`, …). Local JSONL traces under `storage/runs/` are linked via metadata `jsonl_trace` / `jsonl_run_id`.
+
+> With `MOCK_MODELS=true`, the graph still traces in LangSmith but LLM spans are skipped (no real `ChatOpenAI` calls).
+
 ## Quickstart (Docker)
 
 ```bash
@@ -91,7 +129,7 @@ Results are written to `evals/latest_results.json`.
 - **Skills:** folders under `skills/<name>/SKILL.md` with YAML frontmatter; loaded **per step** via `skill_loader.py`.
 - **RAG:** PyMuPDF text + table blocks + embedded figures (saved under `storage/extracted_images`); Chroma persistence; BM25 re-rank in `rag/retriever.py`.
 - **Visuals:** decision order — **uploaded image > PDF figure > MOCK slide** (Pillow renders real content onto a branded canvas). When a real asset exists the PNG path is served directly; mock slide is only the final fallback.
-- **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl`. Terminal prints structured `[AGENT] IN/OUT` logs per agent step. The UI exposes the latest trace download. Critic runs emit two events per iteration: `agent_end` (with `critic_iteration`, `max_retries_reached`, `passed`, `scores`, `issues`) and `critic_routing` (with `destination` and reason), making the bounded retry loop fully visible in the trace.
+- **Observability:** `observability/trace_logger.py` writes JSONL under `storage/runs/<run_id>.jsonl`. Terminal prints structured `[AGENT] IN/OUT` logs per agent step. The UI exposes the latest trace download. Critic runs emit two events per iteration: `agent_end` (with `critic_iteration`, `max_retries_reached`, `passed`, `scores`, `issues`) and `critic_routing` (with `destination` and reason), making the bounded retry loop fully visible in the trace. Optional **LangSmith** tracing (`observability/langsmith_setup.py`) records LangGraph runs and `ChatOpenAI` spans when `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` are set.
 - **UI progress:** Each agent step fires a `status_callback` updating an inline caption in real-time — no page refresh or clicking required.
 - **Grounded copywriter:** System prompt explicitly forbids generic text; every claim must come from retrieved chunks. Outputs `per_slide_bullets` (real facts per slide) alongside `per_slide_captions`.
 - **Dynamic PDF queries:** Planner generates 3-5 document-aware queries (adapts to resume / paper / spec / any doc type). Research deduplicates across queries.

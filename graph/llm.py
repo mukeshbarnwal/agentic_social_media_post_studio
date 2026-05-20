@@ -86,9 +86,17 @@ def _mock_json_from_prompt(system: str, user: str) -> dict[str, Any]:
         markers = [i for i in ids if ":" in i][:8] or ["mock:chunk"]
         nslides = len(re.findall(r'"title"', user)) or 3
         captions = [f"MOCK caption for slide {j + 1}" for j in range(min(nslides, 8))]
+        hook = "MOCK hook — grounded run (MOCK_MODELS=true)."
+        body = "MOCK body paragraph one.\n\nMOCK body paragraph two with a concrete claim tied to sources."
+        eh = re.search(r'"edit_hook"\s*:\s*"([^"]*)"', user)
+        eb = re.search(r'"edit_body"\s*:\s*"([^"]*)"', user)
+        if eh and eh.group(1).strip():
+            hook = f"MOCK hook (edited): {eh.group(1).strip()[:120]}"
+        if eb and eb.group(1).strip():
+            body = f"MOCK body (edited): {eb.group(1).strip()[:500]}"
         return {
-            "hook": "MOCK hook — grounded run (MOCK_MODELS=true).",
-            "body": "MOCK body paragraph one.\n\nMOCK body paragraph two with a concrete claim tied to sources.",
+            "hook": hook,
+            "body": body,
             "hashtags": ["#MockModel", "#LinkedIn", "#AI"],
             "cta": "MOCK CTA: comment if you want the real model path enabled.",
             "source_markers": markers[:5],

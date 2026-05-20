@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
@@ -15,7 +17,18 @@ from graph.nodes import (
     visual_node,
 )
 from graph.state import StudioState
+from observability.interaction_log import log_interaction
+from observability.langsmith_setup import build_invoke_config, configure_langsmith
 from observability.trace_logger import RunTrace
+
+try:
+    from langsmith import traceable
+except ImportError:  # pragma: no cover
+    def traceable(*_args, **_kwargs):  # type: ignore[misc]
+        def _decorator(fn):
+            return fn
+
+        return _decorator
 
 
 def _route_after_critic(state: StudioState, trace: RunTrace | None = None) -> Literal["assemble", "copywriter", "visual", "research"]:
@@ -32,8 +45,8 @@ def _route_after_critic(state: StudioState, trace: RunTrace | None = None) -> Li
                 critic_passed=bool(rep.get("pass")),
                 issues=rep.get("issues", []),
             )
-        return "assemble"
-    route = rep.get("route") or "copywriter"
+        return "assemble" # if maximum retry is reached, we return the assmble which assembles the previous agents outputs
+    route = rep.get("route") or "copywriter" 
     if route not in ("copywriter", "visual", "research"):
         route = "copywriter"
     if trace:
@@ -62,7 +75,10 @@ _AGENT_LABELS = {
 def build_workflow(trace: RunTrace, status_callback=None):
     g = StateGraph(StudioState)
 
-    def wrap(name, fn):
+    def wrap(name: str, fn):
+        """LangGraph node with an explicit LangSmith span name (planner, research, …)."""
+
+        @traceable(name=name, run_type="chain", tags=["agent", name])
         def _inner(state: StudioState) -> dict[str, Any]:
             icon, label, detail = _AGENT_LABELS.get(name, ("⚙️", name.title(), ""))
             print(f"[AGENT]  ▶ {name.upper()} starting …", flush=True)
@@ -73,7 +89,13 @@ def build_workflow(trace: RunTrace, status_callback=None):
             print(f"[AGENT]  ✓ {name.upper()} done", flush=True)
             return result
 
+        _inner.__name__ = name
         return _inner
+
+    @traceable(name="critic_router", run_type="chain", tags=["agent", "critic"])
+    def critic_router(state: StudioState) -> str:
+        """Critic conditional edge — replaces anonymous RunnableCallable in traces."""
+        return _route_after_critic(state, trace)  # type: ignore[return-value]
 
     g.add_node("planner", wrap("planner", planner_node))
     g.add_node("research", wrap("research", research_node))
@@ -89,7 +111,7 @@ def build_workflow(trace: RunTrace, status_callback=None):
     g.add_edge("visual", "critic")
     g.add_conditional_edges(
         "critic",
-        lambda state: _route_after_critic(state, trace),
+        critic_router,
         {
             "assemble": "assemble",
             "copywriter": "copywriter",
@@ -98,10 +120,20 @@ def build_workflow(trace: RunTrace, status_callback=None):
         },
     )
     g.add_edge("assemble", END)
-    return g.compile()
+    try:
+        return g.compile(name="agentic_social_post_studio")
+    except TypeError:
+        return g.compile()
 
 
-def run_studio(initial: StudioState, status_callback=None) -> tuple[StudioState, RunTrace]:
+def run_studio(
+    initial: StudioState,
+    status_callback=None,
+    *,
+    log_source: str = "app",
+    case_id: str | None = None,
+) -> tuple[StudioState, RunTrace]:
+    configure_langsmith()
     trace = RunTrace()
     trace.log("run_start", topic=initial.get("topic"), rerun_scope=initial.get("rerun_scope", "full"))
     data = dict(initial)
@@ -111,5 +143,38 @@ def run_studio(initial: StudioState, status_callback=None) -> tuple[StudioState,
     data.setdefault("critic_iterations", 0)
     data.setdefault("trace", [])
     data.setdefault("token_usage", {})
-    out = app.invoke(data)
+    mock = os.getenv("MOCK_MODELS", "").lower() in ("1", "true", "yes")
+    invoke_config = build_invoke_config(
+        run_name="agentic_social_post_studio",
+        metadata={
+            "topic": initial.get("topic"),
+            "rerun_scope": initial.get("rerun_scope", "full"),
+            "num_slides": initial.get("num_slides"),
+            "pdf_ids": initial.get("pdf_ids") or [],
+            "mock_models": mock,
+            "jsonl_run_id": trace.run_id,
+            "jsonl_trace": str(trace.path) if trace.path else None,
+        },
+        tags=["studio", "mock" if mock else "live"],
+    )
+    t0 = time.perf_counter()
+    err: str | None = None
+    out: StudioState = {}
+    try:
+        out = app.invoke(data, config=invoke_config) if invoke_config else app.invoke(data)
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - t0) * 1000
+        log_interaction(
+            trace.run_id,
+            dict(initial),
+            dict(out) if out else {},
+            trace_path=str(trace.path) if trace.path else None,
+            source=log_source,
+            case_id=case_id,
+            error=err,
+            duration_ms=duration_ms,
+        )
     return out, trace

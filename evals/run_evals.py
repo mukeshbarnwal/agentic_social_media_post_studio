@@ -100,7 +100,7 @@ def main() -> None:
             "user_edited_hook": case.get("edit_hook") or None,
             "user_edited_body": case.get("edit_body") or None,
         }
-        out, trace = run_studio(init)
+        out, trace = run_studio(init, log_source="eval", case_id=case["id"])
         r = _score_case(case, dict(out))
         rows.append({"id": case["id"], **r, "trace_path": str(trace.path) if trace.path else None})
 
